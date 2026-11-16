@@ -28,14 +28,17 @@ class OverlayService : Service() {
         startAsForeground()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         view = OverlayView(this)
+        view.locked = true
         overlayParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSLUCENT
         )
+        overlayParams.alpha = 0.79f
         wm.addView(view, overlayParams)
         buildControls()
     }
@@ -56,6 +59,15 @@ class OverlayService : Service() {
     private fun btn(label: String, action: (Button) -> Unit): Button =
         Button(this).apply { text = label; isAllCaps = false; setOnClickListener { action(this) } }
 
+    private fun applyLock(locked: Boolean, b: Button) {
+        view.locked = locked
+        b.text = if (locked) "Edit (move lines)" else "Play (lock)"
+        val f = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        overlayParams.flags = if (locked) overlayParams.flags or f else overlayParams.flags and f.inv()
+        wm.updateViewLayout(view, overlayParams)
+        view.invalidate()
+    }
+
     private fun buildControls() {
         val dm = resources.displayMetrics
         controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -63,14 +75,9 @@ class OverlayService : Service() {
         val scroll = ScrollView(this).apply { addView(list); visibility = View.GONE }
 
         val menu = btn("\u2630") { scroll.visibility = if (scroll.visibility == View.GONE) View.VISIBLE else View.GONE }
-        list.addView(btn("Lock (play)") { b ->
-            view.locked = !view.locked
-            b.text = if (view.locked) "Unlock (edit)" else "Lock (play)"
-            val f = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-            overlayParams.flags = if (view.locked) overlayParams.flags or f else overlayParams.flags and f.inv()
-            wm.updateViewLayout(view, overlayParams)
-            view.invalidate()
-        })
+
+        list.addView(btn("Stop") { stopSelf() })
+        list.addView(btn("Edit (move lines)") { b -> applyLock(!view.locked, b) })
         list.addView(btn("Swap C / 8") { view.swap() })
         list.addView(btn("Reset") { view.resetLayout() })
         list.addView(btn("Theme") { view.nextTheme() })
@@ -82,7 +89,6 @@ class OverlayService : Service() {
             "animate" to "Animations", "snap" to "Snap to pockets"
         )
         for ((k, n) in names) list.addView(btn(n) { view.toggle(k) })
-        list.addView(btn("Close") { stopSelf() })
 
         controls.addView(menu)
         controls.addView(scroll, LinearLayout.LayoutParams(
