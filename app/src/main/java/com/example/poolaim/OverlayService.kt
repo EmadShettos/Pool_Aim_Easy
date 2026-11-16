@@ -128,6 +128,7 @@ class OverlayService : Service() {
             val active = when (h.key) {
                 "tl", "br" -> !view.locked && !view.rectHidden
                 "marker" -> view.flags["lines"] == true
+                "p1", "p2" -> !view.aimHidden
                 else -> true
             }
             val p = view.touchPos(h.key)
@@ -142,9 +143,9 @@ class OverlayService : Service() {
     private fun startAsForeground() {
         val ch = "pool_aim"
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        nm.createNotificationChannel(NotificationChannel(ch, "Pool Aim", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel(ch, "Pool Aim Shettos", NotificationManager.IMPORTANCE_LOW))
         val n = Notification.Builder(this, ch)
-            .setContentTitle("Pool Aim is running")
+            .setContentTitle("Pool Aim Shettos is running")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .build()
         if (Build.VERSION.SDK_INT >= 34) {
@@ -206,22 +207,21 @@ class OverlayService : Service() {
         list.addView(btn("Hide C-8 line") { b ->
             view.aimHidden = !view.aimHidden
             b.text = if (view.aimHidden) "Show C-8 line" else "Hide C-8 line"
-            view.invalidate()
+            view.invalidate(); syncHandles()
         })
         list.addView(btn("Lock rectangle") { b ->
             view.locked = !view.locked
             b.text = if (view.locked) "Unlock rectangle" else "Lock rectangle"
             view.invalidate(); syncHandles()
         })
-        list.addView(btn("Swap C / 8") { view.swap() })
         list.addView(btn("Reset") { view.resetLayout() })
         list.addView(btn("Theme") { view.nextTheme() })
         list.addView(btn("Line +") { view.thicker(1f) })
         list.addView(btn("Line -") { view.thicker(-1f) })
-        val names = mapOf(
+        val names = linkedMapOf(
             "lines" to "Pocket lines", "single" to "Single aim", "bank" to "Bank shot",
             "double_bank" to "Double bank", "ghost" to "Ghost ball", "hud" to "HUD",
-            "animate" to "Animations", "snap" to "Snap to pockets"
+            "snap" to "Snap to pockets"
         )
         for ((k, n) in names) list.addView(btn(n) { view.toggle(k); syncHandles() })
 
