@@ -3,7 +3,6 @@ package com.example.poolaim
 import android.content.Context
 import android.graphics.*
 import android.os.SystemClock
-import android.view.MotionEvent
 import android.view.View
 import kotlin.math.hypot
 import kotlin.math.max
@@ -25,20 +24,15 @@ class OverlayView(ctx: Context) : View(ctx) {
     )
     var thickness = 3f
     var themeIdx = 0
-    var locked = false
-    private var lastTarget = "p2"
+    var locked = true
+    var rectHidden = false
+    var onChanged: (() -> Unit)? = null
     private var loaded = false
 
     private val pocketR = 14f * d
-    private val hit = 44f * d
-    private val grip = 10f * d
     private val snapThresh = 24f * d
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER }
-
-    private var dragKind: String? = null
-    private var offX = 0f
-    private var offY = 0f
 
     init { load() }
 
@@ -50,6 +44,9 @@ class OverlayView(ctx: Context) : View(ctx) {
     private val tsec get() = (SystemClock.uptimeMillis() - t0) / 1000f
     private fun pulse() = if (flags["animate"] == true) 0.5f + 0.5f * sin(tsec * 4f) else 0.5f
 
+    private val haloOuter = Color.argb(60, 255, 255, 255)
+    private val haloInner = Color.argb(110, 255, 255, 255)
+
     fun resetLayout() {
         val w = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
         val h = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
@@ -57,30 +54,75 @@ class OverlayView(ctx: Context) : View(ctx) {
         p1.set(rect.left + rect.width() * 0.25f, rect.centerY())
         p2.set(rect.right - rect.width() * 0.25f, rect.centerY())
         marker.set(rect.centerX(), rect.centerY())
-        lastTarget = "p2"
         invalidate()
+        onChanged?.invoke()
     }
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         if (!loaded) { resetLayout(); loaded = true }
+        onChanged?.invoke()
     }
 
     fun swap() {
         val x = p1.x; val y = p1.y
         p1.set(p2.x, p2.y); p2.set(x, y)
-        lastTarget = if (lastTarget == "p2") "p1" else "p2"
         invalidate()
+        onChanged?.invoke()
     }
 
     fun toggle(k: String) { flags[k] = !(flags[k] ?: false); save(); invalidate() }
     fun nextTheme() { themeIdx = (themeIdx + 1) % THEMES.size; save(); invalidate() }
     fun thicker(delta: Float) { thickness = (thickness + delta).coerceIn(1f, 10f); save(); invalidate() }
 
+    fun pos(key: String): PointF = when (key) {
+        "p1" -> PointF(p1.x, p1.y)
+        "p2" -> PointF(p2.x, p2.y)
+        "marker" -> PointF(marker.x, marker.y)
+        "tl" -> PointF(rect.left, rect.top)
+        else -> PointF(rect.right, rect.bottom)
+    }
+
+    fun setPoint(key: String, x: Float, y: Float, final: Boolean) {
+        when (key) {
+            "p1", "p2" -> if (final) place(key, x, y) else {
+                val (nx, ny) = Geometry.clamp(Pt(x, y), box())
+                (if (key == "p1") p1 else p2).set(nx, ny)
+            }
+            "marker" -> { val (nx, ny) = Geometry.clamp(Pt(x, y), box()); marker.set(nx, ny) }
+            "tl" -> {
+                rect.left = min(x.coerceIn(0f, width.toFloat()), rect.right - 120f * d)
+                rect.top = min(y.coerceIn(0f, height.toFloat()), rect.bottom - 80f * d)
+                keepInside()
+            }
+            "br" -> {
+                rect.right = max(x.coerceIn(0f, width.toFloat()), rect.left + 120f * d)
+                rect.bottom = max(y.coerceIn(0f, height.toFloat()), rect.top + 80f * d)
+                keepInside()
+            }
+        }
+        invalidate()
+    }
+
+    private fun place(which: String, x: Float, y: Float) {
+        var (nx, ny) = Geometry.clamp(Pt(x, y), box())
+        if (flags["snap"] == true) {
+            val (pc, dd) = Geometry.nearestPocket(Pt(nx, ny), box())
+            if (dd <= snapThresh) { nx = pc.first; ny = pc.second }
+        }
+        if (which == "p1") p1.set(nx, ny) else p2.set(nx, ny)
+    }
+
+    private fun keepInside() {
+        for (p in listOf(p1, p2, marker)) {
+            val (x, y) = Geometry.clamp(Pt(p.x, p.y), box()); p.set(x, y)
+        }
+    }
+
     // ---------- drawing ----------
-    private fun shadowLine(c: Canvas, a: PointF, b: PointF) {
+    private fun shadowLine(c: Canvas, a: PointF, b: PointF, outer: Int = rgba(30), inner: Int = rgba(70)) {
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = pocketR; paint.color = rgba(30); c.drawLine(a.x, a.y, b.x, b.y, paint)
-        paint.strokeWidth = pocketR * 0.6f; paint.color = rgba(70); c.drawLine(a.x, a.y, b.x, b.y, paint)
+        paint.strokeWidth = pocketR; paint.color = outer; c.drawLine(a.x, a.y, b.x, b.y, paint)
+        paint.strokeWidth = pocketR * 0.6f; paint.color = inner; c.drawLine(a.x, a.y, b.x, b.y, paint)
     }
 
     private fun line(c: Canvas, ax: Float, ay: Float, bx: Float, by: Float, w: Float, col: Int) {
@@ -97,12 +139,13 @@ class OverlayView(ctx: Context) : View(ctx) {
         val th = thickness * d
         val b = box()
         val pockets = Geometry.pocketCenters(b)
-
         paint.pathEffect = null
-        ring(c, 0f, 0f, 0f, 0) // reset state
-        paint.style = Paint.Style.STROKE; paint.strokeWidth = 3f * d; paint.color = Color.WHITE
-        c.drawRoundRect(rect, 22f * d, 22f * d, paint)
-        for (p in pockets) ring(c, p.first, p.second, pocketR, color, 1f * d)
+
+        if (!rectHidden) {
+            paint.style = Paint.Style.STROKE; paint.strokeWidth = 3f * d; paint.color = Color.WHITE
+            c.drawRoundRect(rect, 22f * d, 22f * d, paint)
+            for (p in pockets) ring(c, p.first, p.second, pocketR, color, 1f * d)
+        }
 
         if (flags["lines"] == true) {
             for (p in pockets) shadowLine(c, marker, PointF(p.first, p.second))
@@ -110,7 +153,8 @@ class OverlayView(ctx: Context) : View(ctx) {
             ring(c, marker.x, marker.y, pocketR, color, th)
         }
         if (flags["single"] == true) {
-            shadowLine(c, p1, p2); line(c, p1.x, p1.y, p2.x, p2.y, th, color)
+            shadowLine(c, p1, p2, haloOuter, haloInner)
+            line(c, p1.x, p1.y, p2.x, p2.y, th, Color.BLACK)
         }
 
         var segs: List<Pair<Pt, Pt>> = emptyList()
@@ -121,7 +165,8 @@ class OverlayView(ctx: Context) : View(ctx) {
             val len = hypot(dx, dy)
             val maxBanks = if (flags["double_bank"] == true) 4 else 2
             val bw = max(2f * d, th + d)
-            shadowLine(c, p1, p2); line(c, p1.x, p1.y, p2.x, p2.y, bw, color)
+            shadowLine(c, p1, p2, haloOuter, haloInner)
+            line(c, p1.x, p1.y, p2.x, p2.y, bw, Color.BLACK)
             val m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks).toMutableList()
             if (m.isNotEmpty()) {
                 val last = m.last()
@@ -133,10 +178,10 @@ class OverlayView(ctx: Context) : View(ctx) {
             }
             segs = m
             for ((i, s) in m.withIndex()) {
-                shadowLine(c, PointF(s.first.first, s.first.second), PointF(s.second.first, s.second.second))
-                line(c, s.first.first, s.first.second, s.second.first, s.second.second, bw, color)
+                shadowLine(c, PointF(s.first.first, s.first.second), PointF(s.second.first, s.second.second), haloOuter, haloInner)
+                line(c, s.first.first, s.first.second, s.second.first, s.second.second, bw, Color.BLACK)
                 if (i < m.size - 1) {
-                    paint.style = Paint.Style.FILL; paint.color = rgba(200)
+                    paint.style = Paint.Style.FILL; paint.color = Color.argb(200, 0, 0, 0)
                     c.drawCircle(s.second.first, s.second.second, 3.5f * d, paint)
                 }
             }
@@ -151,9 +196,14 @@ class OverlayView(ctx: Context) : View(ctx) {
             c.drawText(label, p.x, p.y + 4f * d, text)
         }
 
-        if (!locked) {
-            paint.style = Paint.Style.FILL; paint.color = Color.WHITE
-            for ((_, g) in gripPoints()) c.drawRect(g.x - grip / 2, g.y - grip / 2, g.x + grip / 2, g.y + grip / 2, paint)
+        if (!locked && !rectHidden) {
+            for ((x, y) in listOf(rect.left to rect.top, rect.right to rect.bottom)) {
+                paint.style = Paint.Style.FILL; paint.color = Color.argb(90, 255, 255, 255)
+                c.drawCircle(x, y, pocketR * 1.2f, paint)
+                ring(c, x, y, pocketR * 1.2f, Color.WHITE)
+                paint.style = Paint.Style.FILL; paint.color = Color.WHITE
+                c.drawCircle(x, y, 3f * d, paint)
+            }
         }
 
         if (flags["hud"] == true) drawHud(c, info, segs, snapped)
@@ -188,7 +238,7 @@ class OverlayView(ctx: Context) : View(ctx) {
     }
 
     private fun drawHud(c: Canvas, info: Triple<Int, Float, Float>?, segs: List<Pair<Pt, Pt>>, snapped: Boolean) {
-        val parts = mutableListOf(if (locked) "Locked" else "Edit")
+        val parts = mutableListOf(if (locked) "Rect locked" else "Rect unlocked")
         if (info != null) {
             parts.add("Cut ${info.second.toInt()}\u00B0 > pocket ${info.first}")
             parts.add(Geometry.difficulty(info.second, info.third, rect.width()))
@@ -204,83 +254,6 @@ class OverlayView(ctx: Context) : View(ctx) {
         paint.style = Paint.Style.FILL; paint.color = Color.argb(215, 15, 17, 23)
         c.drawRoundRect(x, 12f * d, x + w, 40f * d, 14f * d, 14f * d, paint)
         c.drawText(s, width / 2f, 31f * d, text)
-    }
-
-    // ---------- touch ----------
-    private fun gripPoints(): List<Pair<String, PointF>> = listOf(
-        "LT" to PointF(rect.left, rect.top), "T" to PointF(rect.centerX(), rect.top),
-        "RT" to PointF(rect.right, rect.top), "L" to PointF(rect.left, rect.centerY()),
-        "R" to PointF(rect.right, rect.centerY()), "LB" to PointF(rect.left, rect.bottom),
-        "B" to PointF(rect.centerX(), rect.bottom), "RB" to PointF(rect.right, rect.bottom)
-    )
-
-    private fun near(p: PointF, x: Float, y: Float, r: Float) = hypot(p.x - x, p.y - y) <= r
-
-    private fun clampToTable(x: Float, y: Float): Pair<Float, Float> =
-        Geometry.clamp(Pt(x, y), box())
-
-    private fun place(which: String, x: Float, y: Float) {
-        var (nx, ny) = clampToTable(x, y)
-        if (flags["snap"] == true) {
-            val (pc, dd) = Geometry.nearestPocket(Pt(nx, ny), box())
-            if (dd <= snapThresh) { nx = pc.first; ny = pc.second }
-        }
-        if (which == "p1") p1.set(nx, ny) else p2.set(nx, ny)
-    }
-
-    private fun keepInside() {
-        for (p in listOf(p1, p2, marker)) { val (x, y) = clampToTable(p.x, p.y); p.set(x, y) }
-    }
-
-    override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (locked) return false
-        val x = e.x; val y = e.y
-        when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                dragKind = when {
-                    near(p1, x, y, hit) -> { lastTarget = "p1"; "p1" }
-                    near(p2, x, y, hit) -> { lastTarget = "p2"; "p2" }
-                    near(marker, x, y, hit) -> "marker"
-                    else -> gripPoints().firstOrNull { near(it.second, x, y, hit) }?.let { "g:" + it.first }
-                        ?: if (rect.contains(x, y)) { offX = x - rect.left; offY = y - rect.top; "table" } else null
-                }
-                return dragKind != null
-            }
-            MotionEvent.ACTION_MOVE -> {
-                val k = dragKind ?: return false
-                when {
-                    k == "p1" || k == "p2" -> { val (nx, ny) = clampToTable(x, y); (if (k == "p1") p1 else p2).set(nx, ny) }
-                    k == "marker" -> { val (nx, ny) = clampToTable(x, y); marker.set(nx, ny) }
-                    k.startsWith("g:") -> resize(k.substring(2), x, y)
-                    k == "table" -> {
-                        val w = rect.width(); val h = rect.height()
-                        val nl = (x - offX).coerceIn(0f, max(0f, width - w))
-                        val nt = (y - offY).coerceIn(0f, max(0f, height - h))
-                        val dx = nl - rect.left; val dy = nt - rect.top
-                        rect.offsetTo(nl, nt)
-                        p1.offset(dx, dy); p2.offset(dx, dy); marker.offset(dx, dy)
-                    }
-                }
-                invalidate(); return true
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                val k = dragKind
-                if (k == "p1") place("p1", p1.x, p1.y)
-                if (k == "p2") place("p2", p2.x, p2.y)
-                dragKind = null; save(); invalidate(); return true
-            }
-        }
-        return false
-    }
-
-    private fun resize(edge: String, x: Float, y: Float) {
-        val cx = x.coerceIn(0f, width.toFloat()); val cy = y.coerceIn(0f, height.toFloat())
-        val minW = 120f * d; val minH = 80f * d
-        if (edge.contains('L')) rect.left = min(cx, rect.right - minW)
-        if (edge.contains('R')) rect.right = max(cx, rect.left + minW)
-        if (edge.contains('T')) rect.top = min(cy, rect.bottom - minH)
-        if (edge.contains('B')) rect.bottom = max(cy, rect.top + minH)
-        keepInside()
     }
 
     // ---------- persistence ----------
