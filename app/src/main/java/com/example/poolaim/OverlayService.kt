@@ -48,8 +48,16 @@ class OverlayService : Service() {
 
     override fun onBind(i: Intent?): IBinder? = null
 
+    private fun cutoutFull(lp: WindowManager.LayoutParams) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        } else if (Build.VERSION.SDK_INT >= 28) {
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+    }
+
     private inner class Handle(val key: String) {
-        val size = (48 * resources.displayMetrics.density).toInt()
+        val size = (30 * resources.displayMetrics.density).toInt()
         val v = View(this@OverlayService)
         val lp = WindowManager.LayoutParams(
             size, size, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -65,6 +73,7 @@ class OverlayService : Service() {
         private var oy = 0f
 
         init {
+            cutoutFull(lp)
             v.setOnTouchListener { _, e ->
                 when (e.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
@@ -91,7 +100,7 @@ class OverlayService : Service() {
         startAsForeground()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         view = OverlayView(this)
-        view.locked = true
+        view.locked = false
         overlayParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -102,23 +111,27 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         )
         overlayParams.alpha = 0.79f
+        cutoutFull(overlayParams)
         wm.addView(view, overlayParams)
         for (k in listOf("p1", "p2", "marker", "tl", "br")) handles.add(Handle(k))
         view.onChanged = { syncHandles() }
         buildControls()
         syncHandles()
+        view.post { syncHandles() }
     }
 
     private fun syncHandles() {
         if (!::view.isInitialized) return
+        val loc = IntArray(2)
+        view.getLocationOnScreen(loc)
         for (h in handles) {
             val active = when (h.key) {
                 "tl", "br" -> !view.locked && !view.rectHidden
                 else -> true
             }
             val p = view.pos(h.key)
-            h.lp.x = (p.x - h.size / 2f).toInt()
-            h.lp.y = (p.y - h.size / 2f).toInt()
+            h.lp.x = (loc[0] + p.x - h.size / 2f).toInt()
+            h.lp.y = (loc[1] + p.y - h.size / 2f).toInt()
             if (active && !h.attached) { wm.addView(h.v, h.lp); h.attached = true }
             else if (active) wm.updateViewLayout(h.v, h.lp)
             else if (h.attached) { wm.removeView(h.v); h.attached = false }
@@ -189,7 +202,7 @@ class OverlayService : Service() {
             b.text = if (view.rectHidden) "Show rect" else "Hide rect"
             view.invalidate(); syncHandles()
         })
-        list.addView(btn("Unlock rectangle") { b ->
+        list.addView(btn("Lock rectangle") { b ->
             view.locked = !view.locked
             b.text = if (view.locked) "Unlock rectangle" else "Lock rectangle"
             view.invalidate(); syncHandles()
