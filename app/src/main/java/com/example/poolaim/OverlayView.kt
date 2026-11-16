@@ -26,11 +26,13 @@ class OverlayView(ctx: Context) : View(ctx) {
     var themeIdx = 0
     var locked = false
     var rectHidden = false
+    var aimHidden = false
     var onChanged: (() -> Unit)? = null
     private var loaded = false
 
     private val pocketR = 14f * d
     private val snapThresh = 24f * d
+    val touchOffX get() = 2f * pocketR
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER }
 
@@ -80,6 +82,11 @@ class OverlayView(ctx: Context) : View(ctx) {
         "marker" -> PointF(marker.x, marker.y)
         "tl" -> PointF(rect.left, rect.top)
         else -> PointF(rect.right, rect.bottom)
+    }
+
+    fun touchPos(key: String): PointF {
+        val p = pos(key)
+        return if (key == "p1" || key == "p2" || key == "marker") PointF(p.x + touchOffX, p.y) else p
     }
 
     fun setPoint(key: String, x: Float, y: Float, final: Boolean) {
@@ -156,9 +163,8 @@ class OverlayView(ctx: Context) : View(ctx) {
         if (flags["lines"] == true) {
             for (p in pockets) shadowLine(c, marker, PointF(p.first, p.second))
             for (p in pockets) line(c, marker.x, marker.y, p.first, p.second, th, color)
-            ring(c, marker.x, marker.y, pocketR, color, th)
         }
-        if (flags["single"] == true) {
+        if (!aimHidden && flags["single"] == true) {
             shadowLine(c, p1, p2, haloOuter, haloInner)
             line(c, p1.x, p1.y, p2.x, p2.y, th, Color.BLACK)
         }
@@ -167,7 +173,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         var snapped = false
         val dx = p2.x - p1.x
         val dy = p2.y - p1.y
-        if ((flags["bank"] == true || flags["double_bank"] == true) && (dx != 0f || dy != 0f)) {
+        if (!aimHidden && (flags["bank"] == true || flags["double_bank"] == true) && (dx != 0f || dy != 0f)) {
             val len = hypot(dx, dy)
             val maxBanks = if (flags["double_bank"] == true) 4 else 2
             val bw = max(2f * d, th + d)
@@ -197,12 +203,16 @@ class OverlayView(ctx: Context) : View(ctx) {
         if (flags["ghost"] == true) info = drawGhost(c, b)
 
         for ((p, label) in listOf(p1 to "C", p2 to "8")) {
-            ring(c, p.x, p.y, pocketR, Color.WHITE)
+            val qx = p.x + touchOffX
+            ring(c, qx, p.y, pocketR, Color.WHITE)
             text.textSize = 10f * d; text.isFakeBoldText = true
-            c.drawText(label, p.x, p.y - pocketR - 4f * d, text)
+            c.drawText(label, qx, p.y - pocketR - 4f * d, text)
             glowDot(c, p.x, p.y)
         }
-        if (flags["lines"] == true) glowDot(c, marker.x, marker.y)
+        if (flags["lines"] == true) {
+            ring(c, marker.x + touchOffX, marker.y, pocketR, color, 2f * d)
+            glowDot(c, marker.x, marker.y)
+        }
 
         if (!locked && !rectHidden) {
             for ((x, y) in listOf(rect.left to rect.top, rect.right to rect.bottom)) {
