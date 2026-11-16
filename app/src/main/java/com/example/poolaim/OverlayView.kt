@@ -43,7 +43,7 @@ class OverlayView(ctx: Context) : View(ctx) {
     private fun rgba(a: Int) = (color and 0x00FFFFFF) or (a shl 24)
     private fun box() = Box(rect.left, rect.top, rect.right, rect.bottom)
     private fun pt(p: PointF) = Pt(p.x, p.y)
-    private val ballR get() = rect.width() * 0.0375f
+    private val ballR get() = 9f * d
     private fun pulse() = 0.5f
 
     private val haloOuter = Color.argb(60, 255, 255, 255)
@@ -244,14 +244,6 @@ class OverlayView(ctx: Context) : View(ctx) {
         c.drawCircle(ghost.first, ghost.second, ballR, paint)
         ring(c, ghost.first, ghost.second, ballR, rgba(255), 1.8f * d)
         ring(c, pocket.first, pocket.second, pocketR + 4 * d + 3 * d * pulse(), rgba(190))
-        val label = "${angle.toInt()}\u00B0"
-        text.textSize = 12f * d
-        val w = text.measureText(label) + 14f * d
-        val bx = obj.first + ballR + 6 * d
-        val by = obj.second - 30 * d
-        paint.style = Paint.Style.FILL; paint.color = Color.argb(215, 15, 17, 23)
-        c.drawRoundRect(bx, by, bx + w, by + 20 * d, 10 * d, 10 * d, paint)
-        c.drawText(label, bx + w / 2, by + 14 * d, text)
         return Triple(idx + 1, angle, Geometry.dist(cue, obj) + Geometry.dist(obj, pocket))
     }
 
