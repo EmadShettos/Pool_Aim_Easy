@@ -157,9 +157,13 @@ class OverlayService : Service() {
         Button(this).apply {
             text = label
             isAllCaps = false
-            textSize = 11f
+            textSize = 9.9f
             minHeight = 0
-            minimumHeight = (38 * d).toInt()
+            minWidth = 0
+            minimumHeight = (34.2f * d).toInt()
+            minimumWidth = (79f * d).toInt()
+            val ph = (14f * d).toInt()
+            setPadding(ph, 0, ph, 0)
             setOnClickListener { action(this) }
         }
 
@@ -226,9 +230,10 @@ class OverlayService : Service() {
         for ((k, n) in names) list.addView(btn(n) { view.toggle(k); syncHandles() })
 
         val bs = (44 * d).toInt()
+        val scrollH = (min(dm.widthPixels, dm.heightPixels) * 0.45f).toInt()
         controls.addView(ball, LinearLayout.LayoutParams(bs, bs))
         controls.addView(scroll, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, (dm.heightPixels * 0.6f).toInt()))
+            LinearLayout.LayoutParams.WRAP_CONTENT, scrollH))
 
         controlsParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
