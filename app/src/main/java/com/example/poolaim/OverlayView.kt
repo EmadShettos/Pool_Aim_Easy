@@ -7,7 +7,6 @@ import android.view.View
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sin
 
 class OverlayView(ctx: Context) : View(ctx) {
     private val prefs = ctx.getSharedPreferences("pool_aim", Context.MODE_PRIVATE)
@@ -36,15 +35,17 @@ class OverlayView(ctx: Context) : View(ctx) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER }
 
-    init { load() }
+    private val touchFill = Color.argb(55, 255, 60, 60)
+    private val touchStroke = Color.argb(170, 255, 80, 80)
+
+    init { load(); flags["animate"] = false }
 
     private val color get() = THEMES[themeIdx].second
     private fun rgba(a: Int) = (color and 0x00FFFFFF) or (a shl 24)
     private fun box() = Box(rect.left, rect.top, rect.right, rect.bottom)
     private fun pt(p: PointF) = Pt(p.x, p.y)
     private val ballR get() = rect.width() * 0.0125f
-    private val tsec get() = (SystemClock.uptimeMillis() - t0) / 1000f
-    private fun pulse() = if (flags["animate"] == true) 0.5f + 0.5f * sin(tsec * 4f) else 0.5f
+    private fun pulse() = 0.5f
 
     private val haloOuter = Color.argb(60, 255, 255, 255)
     private val haloInner = Color.argb(110, 255, 255, 255)
@@ -65,14 +66,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         onChanged?.invoke()
     }
 
-    fun swap() {
-        val x = p1.x; val y = p1.y
-        p1.set(p2.x, p2.y); p2.set(x, y)
-        invalidate()
-        onChanged?.invoke()
-    }
-
-    fun toggle(k: String) { flags[k] = !(flags[k] ?: false); save(); invalidate() }
+    fun toggle(k: String) { flags[k] = !(flags[k] ?: false); flags["animate"] = false; save(); invalidate() }
     fun nextTheme() { themeIdx = (themeIdx + 1) % THEMES.size; save(); invalidate() }
     fun thicker(delta: Float) { thickness = (thickness + delta).coerceIn(1f, 10f); save(); invalidate() }
 
@@ -142,6 +136,12 @@ class OverlayView(ctx: Context) : View(ctx) {
         c.drawCircle(x, y, r, paint)
     }
 
+    private fun touchCircle(c: Canvas, x: Float, y: Float, r: Float) {
+        paint.style = Paint.Style.FILL; paint.color = touchFill
+        c.drawCircle(x, y, r, paint)
+        ring(c, x, y, r, touchStroke, 2f * d)
+    }
+
     private fun glowDot(c: Canvas, x: Float, y: Float) {
         paint.style = Paint.Style.FILL
         paint.color = Color.argb(70, 255, 20, 20); c.drawCircle(x, y, 5.5f * d, paint)
@@ -200,17 +200,19 @@ class OverlayView(ctx: Context) : View(ctx) {
         }
 
         var info: Triple<Int, Float, Float>? = null
-        if (flags["ghost"] == true) info = drawGhost(c, b)
+        if (!aimHidden && flags["ghost"] == true) info = drawGhost(c, b)
 
-        for ((p, label) in listOf(p1 to "C", p2 to "8")) {
-            val qx = p.x + touchOffX
-            ring(c, qx, p.y, pocketR, Color.WHITE)
-            text.textSize = 10f * d; text.isFakeBoldText = true
-            c.drawText(label, qx, p.y - pocketR - 4f * d, text)
-            glowDot(c, p.x, p.y)
+        if (!aimHidden) {
+            for ((p, label) in listOf(p1 to "C", p2 to "8")) {
+                val qx = p.x + touchOffX
+                touchCircle(c, qx, p.y, pocketR)
+                text.textSize = 10f * d; text.isFakeBoldText = true
+                c.drawText(label, qx, p.y - pocketR - 4f * d, text)
+                glowDot(c, p.x, p.y)
+            }
         }
         if (flags["lines"] == true) {
-            ring(c, marker.x + touchOffX, marker.y, pocketR, color, 2f * d)
+            touchCircle(c, marker.x + touchOffX, marker.y, pocketR)
             glowDot(c, marker.x, marker.y)
         }
 
@@ -225,7 +227,6 @@ class OverlayView(ctx: Context) : View(ctx) {
         }
 
         if (flags["hud"] == true) drawHud(c, info, segs, snapped)
-        if (flags["animate"] == true) postInvalidateOnAnimation()
     }
 
     private fun drawGhost(c: Canvas, b: Box): Triple<Int, Float, Float>? {
