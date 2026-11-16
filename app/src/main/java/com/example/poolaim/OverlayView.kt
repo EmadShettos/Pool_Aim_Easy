@@ -31,12 +31,11 @@ class OverlayView(ctx: Context) : View(ctx) {
 
     private val pocketR = 14f * d
     private val snapThresh = 24f * d
-    val touchOffX get() = 2f * pocketR
+    val touchOffX get() = 2.6f * pocketR
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER }
 
     private val touchFill = Color.argb(55, 255, 60, 60)
-    private val touchStroke = Color.argb(170, 255, 80, 80)
 
     init { load(); flags["animate"] = false }
 
@@ -139,7 +138,7 @@ class OverlayView(ctx: Context) : View(ctx) {
     private fun touchCircle(c: Canvas, x: Float, y: Float, r: Float) {
         paint.style = Paint.Style.FILL; paint.color = touchFill
         c.drawCircle(x, y, r, paint)
-        ring(c, x, y, r, touchStroke, 2f * d)
+        ring(c, x, y, r, Color.WHITE, 2f * d)
     }
 
     private fun glowDot(c: Canvas, x: Float, y: Float) {
