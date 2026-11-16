@@ -24,7 +24,7 @@ class OverlayView(ctx: Context) : View(ctx) {
     )
     var thickness = 3f
     var themeIdx = 0
-    var locked = true
+    var locked = false
     var rectHidden = false
     var onChanged: (() -> Unit)? = null
     private var loaded = false
@@ -135,6 +135,13 @@ class OverlayView(ctx: Context) : View(ctx) {
         c.drawCircle(x, y, r, paint)
     }
 
+    private fun glowDot(c: Canvas, x: Float, y: Float) {
+        paint.style = Paint.Style.FILL
+        paint.color = Color.argb(70, 255, 20, 20); c.drawCircle(x, y, 5.5f * d, paint)
+        paint.color = Color.argb(150, 255, 30, 30); c.drawCircle(x, y, 3.5f * d, paint)
+        paint.color = Color.rgb(255, 40, 40); c.drawCircle(x, y, 2f * d, paint)
+    }
+
     override fun onDraw(c: Canvas) {
         val th = thickness * d
         val b = box()
@@ -144,7 +151,6 @@ class OverlayView(ctx: Context) : View(ctx) {
         if (!rectHidden) {
             paint.style = Paint.Style.STROKE; paint.strokeWidth = 3f * d; paint.color = Color.WHITE
             c.drawRoundRect(rect, 22f * d, 22f * d, paint)
-            for (p in pockets) ring(c, p.first, p.second, pocketR, color, 1f * d)
         }
 
         if (flags["lines"] == true) {
@@ -192,9 +198,11 @@ class OverlayView(ctx: Context) : View(ctx) {
 
         for ((p, label) in listOf(p1 to "C", p2 to "8")) {
             ring(c, p.x, p.y, pocketR, Color.WHITE)
-            text.textSize = 11f * d; text.isFakeBoldText = true
-            c.drawText(label, p.x, p.y + 4f * d, text)
+            text.textSize = 10f * d; text.isFakeBoldText = true
+            c.drawText(label, p.x, p.y - pocketR - 4f * d, text)
+            glowDot(c, p.x, p.y)
         }
+        if (flags["lines"] == true) glowDot(c, marker.x, marker.y)
 
         if (!locked && !rectHidden) {
             for ((x, y) in listOf(rect.left to rect.top, rect.right to rect.bottom)) {
