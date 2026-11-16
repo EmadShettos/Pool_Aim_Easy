@@ -127,9 +127,10 @@ class OverlayService : Service() {
         for (h in handles) {
             val active = when (h.key) {
                 "tl", "br" -> !view.locked && !view.rectHidden
+                "marker" -> view.flags["lines"] == true
                 else -> true
             }
-            val p = view.pos(h.key)
+            val p = view.touchPos(h.key)
             h.lp.x = (loc[0] + p.x - h.size / 2f).toInt()
             h.lp.y = (loc[1] + p.y - h.size / 2f).toInt()
             if (active && !h.attached) { wm.addView(h.v, h.lp); h.attached = true }
@@ -202,6 +203,11 @@ class OverlayService : Service() {
             b.text = if (view.rectHidden) "Show rect" else "Hide rect"
             view.invalidate(); syncHandles()
         })
+        list.addView(btn("Hide C-8 line") { b ->
+            view.aimHidden = !view.aimHidden
+            b.text = if (view.aimHidden) "Show C-8 line" else "Hide C-8 line"
+            view.invalidate()
+        })
         list.addView(btn("Lock rectangle") { b ->
             view.locked = !view.locked
             b.text = if (view.locked) "Unlock rectangle" else "Lock rectangle"
@@ -217,7 +223,7 @@ class OverlayService : Service() {
             "double_bank" to "Double bank", "ghost" to "Ghost ball", "hud" to "HUD",
             "animate" to "Animations", "snap" to "Snap to pockets"
         )
-        for ((k, n) in names) list.addView(btn(n) { view.toggle(k) })
+        for ((k, n) in names) list.addView(btn(n) { view.toggle(k); syncHandles() })
 
         val bs = (44 * d).toInt()
         controls.addView(ball, LinearLayout.LayoutParams(bs, bs))
