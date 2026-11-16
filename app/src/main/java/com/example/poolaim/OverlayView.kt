@@ -44,7 +44,7 @@ class OverlayView(ctx: Context) : View(ctx) {
     private fun rgba(a: Int) = (color and 0x00FFFFFF) or (a shl 24)
     private fun box() = Box(rect.left, rect.top, rect.right, rect.bottom)
     private fun pt(p: PointF) = Pt(p.x, p.y)
-    private val ballR get() = rect.width() * 0.0125f
+    private val ballR get() = rect.width() * 0.0375f
     private fun pulse() = 0.5f
 
     private val haloOuter = Color.argb(60, 255, 255, 255)
