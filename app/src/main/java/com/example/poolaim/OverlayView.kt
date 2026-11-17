@@ -50,9 +50,6 @@ class OverlayView(ctx: Context) : View(ctx) {
     private val ghostDistPx get() = ghostDistStep * 3f * d
     private fun pulse() = 0.5f
 
-    private val haloOuter = Color.argb(60, 255, 255, 255)
-    private val haloInner = Color.argb(110, 255, 255, 255)
-
     fun resetLayout() {
         val w = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
         val h = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
@@ -123,12 +120,6 @@ class OverlayView(ctx: Context) : View(ctx) {
     }
 
     // ---------- drawing ----------
-    private fun shadowLine(c: Canvas, a: PointF, b: PointF, outer: Int = rgba(30), inner: Int = rgba(70)) {
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = pocketR; paint.color = outer; c.drawLine(a.x, a.y, b.x, b.y, paint)
-        paint.strokeWidth = pocketR * 0.6f; paint.color = inner; c.drawLine(a.x, a.y, b.x, b.y, paint)
-    }
-
     private fun line(c: Canvas, ax: Float, ay: Float, bx: Float, by: Float, w: Float, col: Int) {
         paint.style = Paint.Style.STROKE; paint.strokeWidth = w; paint.color = col
         c.drawLine(ax, ay, bx, by, paint)
@@ -159,16 +150,14 @@ class OverlayView(ctx: Context) : View(ctx) {
         paint.pathEffect = null
 
         if (!rectHidden) {
-            paint.style = Paint.Style.STROKE; paint.strokeWidth = 3f * d; paint.color = Color.WHITE
+            paint.style = Paint.Style.STROKE; paint.strokeWidth = 2.25f * d; paint.color = Color.WHITE
             c.drawRoundRect(rect, 22f * d, 22f * d, paint)
         }
 
         if (flags["lines"] == true) {
-            for (p in pockets) shadowLine(c, marker, PointF(p.first, p.second))
             for (p in pockets) line(c, marker.x, marker.y, p.first, p.second, th, color)
         }
         if (!aimHidden && flags["single"] == true) {
-            shadowLine(c, p1, p2, haloOuter, haloInner)
             line(c, p1.x, p1.y, p2.x, p2.y, th, Color.BLACK)
         }
 
@@ -180,7 +169,6 @@ class OverlayView(ctx: Context) : View(ctx) {
             val len = hypot(dx, dy)
             val maxBanks = if (flags["double_bank"] == true) 4 else 2
             val bw = max(2f * d, th + d)
-            shadowLine(c, p1, p2, haloOuter, haloInner)
             line(c, p1.x, p1.y, p2.x, p2.y, bw, Color.BLACK)
             val m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks).toMutableList()
             if (m.isNotEmpty()) {
@@ -193,7 +181,6 @@ class OverlayView(ctx: Context) : View(ctx) {
             }
             segs = m
             for ((i, s) in m.withIndex()) {
-                shadowLine(c, PointF(s.first.first, s.first.second), PointF(s.second.first, s.second.second), haloOuter, haloInner)
                 line(c, s.first.first, s.first.second, s.second.first, s.second.second, bw, Color.BLACK)
                 if (i < m.size - 1) {
                     paint.style = Paint.Style.FILL; paint.color = Color.argb(200, 0, 0, 0)
@@ -256,18 +243,37 @@ class OverlayView(ctx: Context) : View(ctx) {
         return Triple(idx + 1, angle, Geometry.dist(cue, obj) + Geometry.dist(obj, pocket))
     }
 
+    private fun diffText(s: String): String {
+        if (!Lang.isAr(context)) return s
+        return when (s.trim().lowercase()) {
+            "very easy" -> "سهل جدا"
+            "easy" -> "سهل"
+            "medium" -> "متوسط"
+            "hard" -> "صعب"
+            "very hard" -> "صعب جدا"
+            else -> s
+        }
+    }
+
     private fun drawHud(c: Canvas, info: Triple<Int, Float, Float>?, segs: List<Pair<Pt, Pt>>, snapped: Boolean) {
-        val parts = mutableListOf(if (locked) "Rect locked" else "Rect unlocked")
+        val ar = Lang.isAr(context)
+        val parts = mutableListOf(Lang.t(context, if (locked) "hud_locked" else "hud_unlocked"))
         if (info != null) {
-            parts.add("Cut ${info.second.toInt()}\u00B0 > pocket ${info.first}")
-            parts.add(Geometry.difficulty(info.second, info.third, rect.width()))
+            val cut = Lang.t(context, "hud_cut")
+            val pk = Lang.t(context, "hud_pocket")
+            parts.add(
+                if (ar) "$cut ${info.second.toInt()}\u00B0 - $pk ${info.first}"
+                else "$cut ${info.second.toInt()}\u00B0 > $pk ${info.first}"
+            )
+            parts.add(diffText(Geometry.difficulty(info.second, info.third, rect.width())))
         }
         if (segs.isNotEmpty()) {
-            parts.add("${max(0, segs.size - 1)} bank(s)")
-            if (snapped) parts.add("pocketed")
+            parts.add("${max(0, segs.size - 1)} ${Lang.t(context, "hud_banks")}")
+            if (snapped) parts.add(Lang.t(context, "hud_pocketed"))
         }
         val s = parts.joinToString("  |  ")
         text.textSize = 12f * d
+        text.isFakeBoldText = false
         val w = text.measureText(s) + 36f * d
         val x = (width - w) / 2
         paint.style = Paint.Style.FILL; paint.color = Color.argb(215, 15, 17, 23)
@@ -283,6 +289,7 @@ class OverlayView(ctx: Context) : View(ctx) {
             putFloat("mx", marker.x); putFloat("my", marker.y)
             putFloat("thick", thickness); putInt("theme", themeIdx)
             putInt("gdist", ghostDistStep); putInt("gsize", ghostSizeStep)
+            putBoolean("locked", locked); putBoolean("rect_hidden", rectHidden); putBoolean("aim_hidden", aimHidden)
             for ((k, v) in flags) putBoolean("f_$k", v)
             apply()
         }
@@ -291,6 +298,12 @@ class OverlayView(ctx: Context) : View(ctx) {
     private fun load() {
         ghostDistStep = prefs.getInt("gdist", 6).coerceIn(0, 10)
         ghostSizeStep = prefs.getInt("gsize", 9).coerceIn(0, 9)
+        locked = prefs.getBoolean("locked", false)
+        rectHidden = prefs.getBoolean("rect_hidden", false)
+        aimHidden = prefs.getBoolean("aim_hidden", false)
+        thickness = prefs.getFloat("thick", 3f).coerceIn(1f, 10f)
+        themeIdx = prefs.getInt("theme", 0).coerceIn(0, THEMES.size - 1)
+        for (k in flags.keys.toList()) flags[k] = prefs.getBoolean("f_$k", flags[k]!!)
         if (!prefs.contains("l")) return
         val l = prefs.getFloat("l", 0f); val t = prefs.getFloat("t", 0f)
         val r = prefs.getFloat("r", 0f); val b = prefs.getFloat("b", 0f)
@@ -299,9 +312,6 @@ class OverlayView(ctx: Context) : View(ctx) {
         p1.set(prefs.getFloat("p1x", 0f), prefs.getFloat("p1y", 0f))
         p2.set(prefs.getFloat("p2x", 0f), prefs.getFloat("p2y", 0f))
         marker.set(prefs.getFloat("mx", 0f), prefs.getFloat("my", 0f))
-        thickness = prefs.getFloat("thick", 3f).coerceIn(1f, 10f)
-        themeIdx = prefs.getInt("theme", 0).coerceIn(0, THEMES.size - 1)
-        for (k in flags.keys.toList()) flags[k] = prefs.getBoolean("f_$k", flags[k]!!)
         keepInside()
         loaded = true
     }
