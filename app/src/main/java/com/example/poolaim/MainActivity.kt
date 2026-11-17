@@ -20,8 +20,10 @@ import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import kotlin.math.max
 import kotlin.math.min
 
 class BannerView(ctx: Context) : View(ctx) {
@@ -91,6 +93,7 @@ class BannerView(ctx: Context) : View(ctx) {
 }
 
 class MainActivity : Activity() {
+    private val gold = 0xFFFFD21F.toInt()
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     private fun styled(label: String, bg: Int, fg: Int, onClick: () -> Unit): Button =
@@ -102,13 +105,64 @@ class MainActivity : Activity() {
             background = GradientDrawable().apply {
                 setColor(bg)
                 cornerRadius = dp(14).toFloat()
-                setStroke(dp(1), 0xFFFFD21F.toInt())
+                setStroke(dp(1), gold)
             }
             setOnClickListener { onClick() }
         }
 
+    private fun text(t: String, sp: Float, col: Int, bold: Boolean = false, center: Boolean = false) =
+        TextView(this).apply {
+            text = t; textSize = sp; setTextColor(col)
+            if (bold) typeface = Typeface.DEFAULT_BOLD
+            if (center) gravity = Gravity.CENTER
+        }
+
+    private fun helpCard(onTop: () -> Unit): LinearLayout {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(16), dp(14), dp(16))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0xFF12894B.toInt(), 0xFF05301B.toInt())
+            ).apply {
+                cornerRadius = dp(20).toFloat()
+                setStroke(dp(2), gold)
+            }
+        }
+        val wrap = LinearLayout.LayoutParams.WRAP_CONTENT
+        val match = LinearLayout.LayoutParams.MATCH_PARENT
+
+        card.addView(text("How to play", 22f, Color.WHITE, true, true),
+            LinearLayout.LayoutParams(match, wrap))
+        card.addView(text("1) Grant overlay permission.  2) Start overlay.  3) Open your table, tap the small ball icon to show the menu, then match the rectangle to the table.",
+            13f, Color.argb(235, 230, 240, 235), false, true),
+            LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(8) })
+
+        val items = listOf(
+            Triple("Rectangle", "rect", "Drag the two white corner circles until the rectangle matches the table. Use Lock rectangle to freeze it, Hide rect to hide it, and Reset to start over."),
+            Triple("Touch circles", "touch", "Drag the red circle beside each dot to move it. The white ring is the grab area. C is the cue ball and 8 is the target ball."),
+            Triple("Single aim", "single", "A black line runs from C through 8 so you can see your aim direction."),
+            Triple("Bank shot", "bank", "Extends the aim line off a cushion, up to 2 banks."),
+            Triple("Double bank", "double", "Adds more cushion bounces, up to 4 banks."),
+            Triple("Pocket lines", "pockets", "Drag the center dot. Lines run from it to all six pockets."),
+            Triple("Ghost ball", "ghost", "Open the Ghost ball menu and tick the box to show the best pocket line and the ghost circle. Use Distance and Size to adjust the circle.")
+        )
+        for ((name, kind, desc) in items) {
+            card.addView(text(name, 16f, gold, true, true),
+                LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(16) })
+            card.addView(HowToDiagram(this, kind),
+                LinearLayout.LayoutParams(match, dp(170)).apply { topMargin = dp(6) })
+            card.addView(text(desc, 13f, Color.argb(235, 230, 240, 235), false, true),
+                LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(6) })
+        }
+        card.addView(styled("Back to top", 0xFF0B0B0B.toInt(), gold) { onTop() },
+            LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(18) })
+        return card
+    }
+
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
+        val scroll = ScrollView(this).apply { isFillViewport = true }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(28), dp(16), dp(16))
@@ -121,10 +175,12 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(8) }
 
+        val card = helpCard { scroll.smoothScrollTo(0, 0) }
+
         root.addView(styled("1) Grant overlay permission", 0xFF14532D.toInt(), Color.WHITE) {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }, lp())
-        root.addView(styled("2) Start overlay", 0xFFFFD21F.toInt(), Color.BLACK) {
+        root.addView(styled("2) Start overlay", gold, Color.BLACK) {
             if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 1)
             if (!Settings.canDrawOverlays(this)) {
                 Toast.makeText(this, "Grant overlay permission first", Toast.LENGTH_LONG).show()
@@ -132,6 +188,9 @@ class MainActivity : Activity() {
         }, lp())
         root.addView(styled("Stop overlay", 0xFF7F1D1D.toInt(), Color.WHITE) {
             stopService(Intent(this, OverlayService::class.java))
+        }, lp())
+        root.addView(styled("How to play", 0xFF0B0B0B.toInt(), gold) {
+            scroll.post { scroll.smoothScrollTo(0, card.top) }
         }, lp())
 
         val strip = LinearLayout(this).apply {
@@ -141,12 +200,12 @@ class MainActivity : Activity() {
             background = GradientDrawable().apply {
                 setColor(0xFF0B0B0B.toInt())
                 cornerRadius = dp(14).toFloat()
-                setStroke(dp(2), 0xFFFFD21F.toInt())
+                setStroke(dp(2), gold)
             }
         }
         strip.addView(TextView(this).apply {
             text = "إعداد بواسطة المطور Emad Shettos"
-            setTextColor(0xFFFFD21F.toInt())
+            setTextColor(gold)
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
@@ -163,10 +222,16 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(14) })
 
+        val bannerH = max(dp(320), (resources.displayMetrics.heightPixels * 0.5f).toInt())
         root.addView(BannerView(this), LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+            LinearLayout.LayoutParams.MATCH_PARENT, bannerH
         ).apply { topMargin = dp(12) })
 
-        setContentView(root)
+        root.addView(card, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(16) })
+
+        scroll.addView(root)
+        setContentView(scroll)
     }
 }
