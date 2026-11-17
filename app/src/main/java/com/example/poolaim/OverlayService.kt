@@ -359,39 +359,6 @@ class OverlayService : Service() {
         return panel
     }
 
-    private fun helpCard(): LinearLayout {
-        val pad = (10 * d).toInt()
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
-            background = darkBox()
-        }
-        card.addView(tv("How to play", 16f, Color.WHITE, true).apply { gravity = Gravity.CENTER_HORIZONTAL },
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        card.addView(tv("Open the game, tap the ball icon to show the menu, then set up the table once.",
-            10.5f, Color.argb(220, 200, 210, 220)).apply { gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, (4 * d).toInt(), 0, (8 * d).toInt()) },
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-
-        val items = listOf(
-            Triple("Rectangle", "rect", "Drag the two white corner circles until the rectangle matches the table. Use Lock rectangle to freeze it, Hide rect to hide it, Reset to start over."),
-            Triple("Touch circles", "touch", "Drag the red circle next to each dot to move it. The white ring is the grab area. C is the cue ball and 8 is the target ball."),
-            Triple("Single aim", "single", "A black line runs from C through 8 so you can see your aim direction."),
-            Triple("Bank shot", "bank", "Extends the aim line off a cushion, up to 2 banks."),
-            Triple("Double bank", "double", "Adds more cushion bounces, up to 4 banks."),
-            Triple("Pocket lines", "pockets", "Drag the center dot. Lines run from it to all six pockets."),
-            Triple("Ghost ball", "ghost", "Tick Ghost ball to show the best pocket line and the ghost circle. Use Distance and Size to adjust the circle.")
-        )
-        for ((name, kind, desc) in items) {
-            card.addView(tv(name, 13f, Color.rgb(0, 229, 255), true).apply { gravity = Gravity.CENTER_HORIZONTAL; setPadding(0, (10 * d).toInt(), 0, (4 * d).toInt()) },
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-            card.addView(HowToDiagram(this, kind),
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (110 * d).toInt()))
-            card.addView(tv(desc, 10.5f, Color.argb(230, 220, 228, 235)).apply { setPadding(0, (4 * d).toInt(), 0, 0) },
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        }
-        return card
-    }
-
     private fun buildControls() {
         val dm = resources.displayMetrics
         controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -428,13 +395,9 @@ class OverlayService : Service() {
         }
 
         val panelW = (220 * d).toInt()
-        val card = helpCard()
         val ghost = ghostPanel()
 
         list.addView(btn("Stop") { stopSelf() })
-        list.addView(btn("How to play") {
-            scroll.post { scroll.smoothScrollTo(0, card.top) }
-        })
         list.addView(btn("Hide rect") { b ->
             view.rectHidden = !view.rectHidden
             b.text = if (view.rectHidden) "Show rect" else "Hide rect"
@@ -464,9 +427,6 @@ class OverlayService : Service() {
             "snap" to "Snap to pockets"
         )
         for ((k, n) in names) list.addView(btn(n) { view.toggle(k); syncHandles() })
-        list.addView(card, LinearLayout.LayoutParams(panelW, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = (8 * d).toInt(); bottomMargin = (8 * d).toInt()
-        })
 
         val bs = (44 * d).toInt()
         val scrollH = (min(dm.widthPixels, dm.heightPixels) * 0.45f).toInt()
