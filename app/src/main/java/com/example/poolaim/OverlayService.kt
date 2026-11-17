@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Color
@@ -29,6 +30,127 @@ import android.widget.SeekBar
 import android.widget.TextView
 import kotlin.math.hypot
 import kotlin.math.min
+
+object Lang {
+    const val PREFS = "pool_aim"
+    const val KEY = "lang_ar"
+
+    fun isAr(ctx: Context): Boolean =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, false)
+
+    fun set(ctx: Context, ar: Boolean) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY, ar).apply()
+    }
+
+    fun t(ctx: Context, k: String): String {
+        val m = if (isAr(ctx)) AR else EN
+        return m[k] ?: EN[k] ?: k
+    }
+
+    private val EN = mapOf(
+        "grant" to "1) Grant overlay permission",
+        "start" to "2) Start overlay",
+        "stop_overlay" to "Stop overlay",
+        "how_to_play" to "How to play",
+        "dev" to "Developed by Emad Shettos",
+        "whatsapp" to "WhatsApp: +201093532277",
+        "grant_first" to "Grant overlay permission first",
+        "help_steps" to "1) Grant overlay permission.  2) Start overlay.  3) Open your table, tap the small ball icon to show the menu, then match the rectangle to the table.",
+        "back_top" to "Back to top",
+        "h_rect" to "Rectangle",
+        "d_rect" to "Drag the two white corner circles until the rectangle matches the table. Use Lock rectangle to freeze it, Hide rect to hide it, and Reset to start over.",
+        "h_touch" to "Touch circles",
+        "d_touch" to "Drag the red circle beside each dot to move it. The white ring is the grab area. C is the cue ball and 8 is the target ball.",
+        "h_single" to "Single aim",
+        "d_single" to "A black line runs from C through 8 so you can see your aim direction.",
+        "h_bank" to "Bank shot",
+        "d_bank" to "Extends the aim line off a cushion, up to 2 banks.",
+        "h_double" to "Double bank",
+        "d_double" to "Adds more cushion bounces, up to 4 banks.",
+        "h_pockets" to "Pocket lines",
+        "d_pockets" to "Drag the center dot. Lines run from it to all six pockets.",
+        "h_ghost" to "Ghost ball",
+        "d_ghost" to "Open the Ghost ball menu and tick the box to show the best pocket line and the ghost circle. Use Distance and Size to adjust the circle.",
+        "m_stop" to "Stop",
+        "m_hide_rect" to "Hide rect",
+        "m_show_rect" to "Show rect",
+        "m_hide_c8" to "Hide C-8 line",
+        "m_show_c8" to "Show C-8 line",
+        "m_lock" to "Lock rectangle",
+        "m_unlock" to "Unlock rectangle",
+        "m_reset" to "Reset",
+        "m_theme" to "Theme",
+        "m_line_plus" to "Line +",
+        "m_line_minus" to "Line -",
+        "m_ghost" to "Ghost ball",
+        "m_distance" to "Distance",
+        "m_size" to "Size",
+        "m_pockets" to "Pocket lines",
+        "m_single" to "Single aim",
+        "m_bank" to "Bank shot",
+        "m_double" to "Double bank",
+        "m_hud" to "HUD",
+        "m_snap" to "Snap to pockets",
+        "hud_locked" to "Rect locked",
+        "hud_unlocked" to "Rect unlocked",
+        "hud_cut" to "Cut",
+        "hud_pocket" to "pocket",
+        "hud_banks" to "bank(s)",
+        "hud_pocketed" to "pocketed"
+    )
+
+    private val AR = mapOf(
+        "grant" to "1) منح إذن العرض فوق التطبيقات",
+        "start" to "2) تشغيل العرض",
+        "stop_overlay" to "إيقاف العرض",
+        "how_to_play" to "كيف تلعب",
+        "dev" to "إعداد بواسطة المطور Emad Shettos",
+        "whatsapp" to "WhatsApp: +201093532277",
+        "grant_first" to "امنح إذن العرض فوق التطبيقات أولاً",
+        "help_steps" to "1) امنح إذن العرض فوق التطبيقات.  2) شغّل العرض.  3) افتح الطاولة داخل اللعبة، واضغط على أيقونة الكرة الصغيرة لإظهار القائمة، ثم اضبط المستطيل ليطابق الطاولة.",
+        "back_top" to "العودة للأعلى",
+        "h_rect" to "المستطيل",
+        "d_rect" to "اسحب الدائرتين البيضاوين في الزاويتين حتى يطابق المستطيل الطاولة. استخدم قفل المستطيل لتثبيته، وإخفاء المستطيل لإخفائه، وإعادة الضبط للبدء من جديد.",
+        "h_touch" to "دوائر اللمس",
+        "d_touch" to "اسحب الدائرة الحمراء بجوار كل نقطة لتحريكها. الحلقة البيضاء هي منطقة اللمس. C هي الكرة البيضاء و8 هي الكرة المستهدفة.",
+        "h_single" to "التصويب المباشر",
+        "d_single" to "خط أسود يمتد من C عبر 8 ليوضح لك اتجاه التصويب.",
+        "h_bank" to "الضربة المرتدة",
+        "d_bank" to "يمتد خط التصويب بعد الارتداد عن الجدار، حتى ارتدادين.",
+        "h_double" to "الارتداد المزدوج",
+        "d_double" to "يضيف ارتدادات أكثر عن الجدران، حتى 4 ارتدادات.",
+        "h_pockets" to "خطوط الجيوب",
+        "d_pockets" to "اسحب النقطة المركزية. تمتد خطوط منها إلى الجيوب الستة.",
+        "h_ghost" to "الكرة الشبحية",
+        "d_ghost" to "افتح قائمة الكرة الشبحية وعلّم المربع لإظهار أفضل خط للجيب والدائرة الشبحية. استخدم المسافة والحجم لضبط الدائرة.",
+        "m_stop" to "إيقاف",
+        "m_hide_rect" to "إخفاء المستطيل",
+        "m_show_rect" to "إظهار المستطيل",
+        "m_hide_c8" to "إخفاء خط C-8",
+        "m_show_c8" to "إظهار خط C-8",
+        "m_lock" to "قفل المستطيل",
+        "m_unlock" to "فتح المستطيل",
+        "m_reset" to "إعادة ضبط",
+        "m_theme" to "المظهر",
+        "m_line_plus" to "سماكة +",
+        "m_line_minus" to "سماكة -",
+        "m_ghost" to "الكرة الشبحية",
+        "m_distance" to "المسافة",
+        "m_size" to "الحجم",
+        "m_pockets" to "خطوط الجيوب",
+        "m_single" to "تصويب مباشر",
+        "m_bank" to "ضربة مرتدة",
+        "m_double" to "ارتداد مزدوج",
+        "m_hud" to "الشريط العلوي",
+        "m_snap" to "الالتصاق بالجيوب",
+        "hud_locked" to "المستطيل مقفل",
+        "hud_unlocked" to "المستطيل غير مقفل",
+        "hud_cut" to "الزاوية",
+        "hud_pocket" to "الجيب",
+        "hud_banks" to "ارتداد",
+        "hud_pocketed" to "دخلت الجيب"
+    )
+}
 
 class BallView(ctx: Context) : View(ctx) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -115,9 +237,6 @@ class HowToDiagram(ctx: Context, private val kind: String) : View(ctx) {
         }
         fun aim(pts: List<Pair<Float, Float>>) {
             for (i in 0 until pts.size - 1) {
-                ln(pts[i].first, pts[i].second, pts[i + 1].first, pts[i + 1].second, Color.argb(110, 255, 255, 255), 5f)
-            }
-            for (i in 0 until pts.size - 1) {
                 ln(pts[i].first, pts[i].second, pts[i + 1].first, pts[i + 1].second, Color.BLACK, 2f)
             }
         }
@@ -157,7 +276,7 @@ class HowToDiagram(ctx: Context, private val kind: String) : View(ctx) {
                 label("C", 0.25f, 0.65f); label("8", 0.65f, 0.4f)
             }
             "rect" -> {
-                p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * d; p.color = Color.WHITE
+                p.style = Paint.Style.STROKE; p.strokeWidth = 2f * d; p.color = Color.WHITE
                 c.drawRoundRect(X(0.1f), Y(0.12f), X(0.9f), Y(0.88f), 10f * d, 10f * d, p)
                 for ((cx, cy) in listOf(0.1f to 0.12f, 0.9f to 0.88f)) {
                     p.style = Paint.Style.FILL; p.color = Color.argb(90, 255, 255, 255)
@@ -174,10 +293,21 @@ class OverlayService : Service() {
     private lateinit var wm: WindowManager
     private lateinit var view: OverlayView
     private lateinit var controls: LinearLayout
+    private lateinit var menuScroll: ScrollView
+    private lateinit var ghostPanelView: LinearLayout
     private lateinit var controlsParams: WindowManager.LayoutParams
     private lateinit var overlayParams: WindowManager.LayoutParams
     private val handles = mutableListOf<Handle>()
     private val d get() = resources.displayMetrics.density
+    private fun prefs(): SharedPreferences = getSharedPreferences(Lang.PREFS, MODE_PRIVATE)
+    private fun T(k: String) = Lang.t(this, k)
+
+    private val langListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == Lang.KEY && ::controls.isInitialized && ::view.isInitialized) {
+            rebuildControls()
+            view.invalidate()
+        }
+    }
 
     override fun onBind(i: Intent?): IBinder? = null
 
@@ -233,7 +363,6 @@ class OverlayService : Service() {
         startAsForeground()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         view = OverlayView(this)
-        view.locked = false
         overlayParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -249,6 +378,7 @@ class OverlayService : Service() {
         for (k in listOf("p1", "p2", "marker", "tl", "br")) handles.add(Handle(k))
         view.onChanged = { syncHandles() }
         buildControls()
+        prefs().registerOnSharedPreferenceChangeListener(langListener)
         syncHandles()
         view.post { syncHandles() }
     }
@@ -330,16 +460,16 @@ class OverlayService : Service() {
         return row
     }
 
-    private fun ghostPanel(): LinearLayout {
+    private fun ghostPanel(open: Boolean): LinearLayout {
         val pad = (8 * d).toInt()
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
             background = darkBox()
-            visibility = View.GONE
+            visibility = if (open) View.VISIBLE else View.GONE
         }
         val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        row1.addView(tv("Ghost ball", 12f, Color.WHITE, true),
+        row1.addView(tv(T("m_ghost"), 12f, Color.WHITE, true),
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         val cb = CheckBox(this).apply {
             isChecked = view.flags["ghost"] == true
@@ -350,29 +480,69 @@ class OverlayService : Service() {
         }
         row1.addView(cb)
         panel.addView(row1)
-        panel.addView(seekRow("Distance", 10, view.ghostDistStep) { v ->
+        panel.addView(seekRow(T("m_distance"), 10, view.ghostDistStep) { v ->
             view.ghostDistStep = v; view.invalidate()
         })
-        panel.addView(seekRow("Size", 9, view.ghostSizeStep) { v ->
+        panel.addView(seekRow(T("m_size"), 9, view.ghostSizeStep) { v ->
             view.ghostSizeStep = v; view.invalidate()
         })
         return panel
     }
 
+    private fun saveMenu() {
+        if (!::controls.isInitialized || !::menuScroll.isInitialized || !::ghostPanelView.isInitialized) return
+        prefs().edit()
+            .putInt("menu_x", controlsParams.x)
+            .putInt("menu_y", controlsParams.y)
+            .putBoolean("menu_open", menuScroll.visibility == View.VISIBLE)
+            .putBoolean("ghost_open", ghostPanelView.visibility == View.VISIBLE)
+            .putInt("menu_scroll", menuScroll.scrollY)
+            .apply()
+    }
+
+    private fun rebuildControls() {
+        saveMenu()
+        runCatching { wm.removeView(controls) }
+        buildControls()
+    }
+
     private fun buildControls() {
         val dm = resources.displayMetrics
+        val sp = prefs()
+        val bs = (44 * d).toInt()
+        val startX = sp.getInt("menu_x", 16).coerceIn(0, (dm.widthPixels - bs).coerceAtLeast(0))
+        val startY = sp.getInt("menu_y", 120).coerceIn(0, (dm.heightPixels - bs).coerceAtLeast(0))
+        val menuOpen = sp.getBoolean("menu_open", false)
+        val ghostOpen = sp.getBoolean("ghost_open", false)
+        val savedScroll = sp.getInt("menu_scroll", 0)
+
         controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply { addView(list); visibility = View.GONE }
+        val scroll = ScrollView(this).apply {
+            addView(list)
+            visibility = if (menuOpen) View.VISIBLE else View.GONE
+            setOnScrollChangeListener { _, _, y, _, _ ->
+                prefs().edit().putInt("menu_scroll", y).apply()
+            }
+        }
+        menuScroll = scroll
+        val ghost = ghostPanel(ghostOpen)
+        ghostPanelView = ghost
+
+        controlsParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.TOP or Gravity.START; x = startX; y = startY }
 
         val ball = BallView(this)
         val slop = ViewConfiguration.get(this).scaledTouchSlop
-        var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false
+        var downX = 0f; var downY = 0f; var sx0 = 0; var sy0 = 0; var moved = false
         ball.setOnTouchListener { _, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = e.rawX; downY = e.rawY
-                    startX = controlsParams.x; startY = controlsParams.y
+                    sx0 = controlsParams.x; sy0 = controlsParams.y
                     moved = false; true
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -380,14 +550,15 @@ class OverlayService : Service() {
                     val dy = e.rawY - downY
                     if (!moved && hypot(dx, dy) > slop) moved = true
                     if (moved) {
-                        controlsParams.x = (startX + dx).toInt()
-                        controlsParams.y = (startY + dy).toInt()
+                        controlsParams.x = (sx0 + dx).toInt()
+                        controlsParams.y = (sy0 + dy).toInt()
                         wm.updateViewLayout(controls, controlsParams)
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!moved) scroll.visibility = if (scroll.visibility == View.GONE) View.VISIBLE else View.GONE
+                    saveMenu()
                     true
                 }
                 else -> false
@@ -395,54 +566,50 @@ class OverlayService : Service() {
         }
 
         val panelW = (220 * d).toInt()
-        val ghost = ghostPanel()
 
-        list.addView(btn("Stop") { stopSelf() })
-        list.addView(btn("Hide rect") { b ->
+        list.addView(btn(T("m_stop")) { stopSelf() })
+        list.addView(btn(T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")) { b ->
             view.rectHidden = !view.rectHidden
-            b.text = if (view.rectHidden) "Show rect" else "Hide rect"
-            view.invalidate(); syncHandles()
+            b.text = T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")
+            view.save(); view.invalidate(); syncHandles()
         })
-        list.addView(btn("Hide C-8 line") { b ->
+        list.addView(btn(T(if (view.aimHidden) "m_show_c8" else "m_hide_c8")) { b ->
             view.aimHidden = !view.aimHidden
-            b.text = if (view.aimHidden) "Show C-8 line" else "Hide C-8 line"
-            view.invalidate(); syncHandles()
+            b.text = T(if (view.aimHidden) "m_show_c8" else "m_hide_c8")
+            view.save(); view.invalidate(); syncHandles()
         })
-        list.addView(btn("Lock rectangle") { b ->
+        list.addView(btn(T(if (view.locked) "m_unlock" else "m_lock")) { b ->
             view.locked = !view.locked
-            b.text = if (view.locked) "Unlock rectangle" else "Lock rectangle"
-            view.invalidate(); syncHandles()
+            b.text = T(if (view.locked) "m_unlock" else "m_lock")
+            view.save(); view.invalidate(); syncHandles()
         })
-        list.addView(btn("Reset") { view.resetLayout() })
-        list.addView(btn("Theme") { view.nextTheme() })
-        list.addView(btn("Line +") { view.thicker(1f) })
-        list.addView(btn("Line -") { view.thicker(-1f) })
-        list.addView(btn("Ghost ball") {
+        list.addView(btn(T("m_reset")) { view.resetLayout(); view.save() })
+        list.addView(btn(T("m_theme")) { view.nextTheme() })
+        list.addView(btn(T("m_line_plus")) { view.thicker(1f) })
+        list.addView(btn(T("m_line_minus")) { view.thicker(-1f) })
+        list.addView(btn(T("m_ghost")) {
             ghost.visibility = if (ghost.visibility == View.GONE) View.VISIBLE else View.GONE
+            saveMenu()
         })
         list.addView(ghost, LinearLayout.LayoutParams(panelW, LinearLayout.LayoutParams.WRAP_CONTENT))
         val names = linkedMapOf(
-            "lines" to "Pocket lines", "single" to "Single aim", "bank" to "Bank shot",
-            "double_bank" to "Double bank", "hud" to "HUD",
-            "snap" to "Snap to pockets"
+            "lines" to "m_pockets", "single" to "m_single", "bank" to "m_bank",
+            "double_bank" to "m_double", "hud" to "m_hud", "snap" to "m_snap"
         )
-        for ((k, n) in names) list.addView(btn(n) { view.toggle(k); syncHandles() })
+        for ((k, n) in names) list.addView(btn(T(n)) { view.toggle(k); syncHandles() })
 
-        val bs = (44 * d).toInt()
         val scrollH = (min(dm.widthPixels, dm.heightPixels) * 0.45f).toInt()
         controls.addView(ball, LinearLayout.LayoutParams(bs, bs))
         controls.addView(scroll, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, scrollH))
 
-        controlsParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.START; x = 16; y = 120 }
         wm.addView(controls, controlsParams)
+        if (menuOpen) scroll.post { scroll.scrollTo(0, savedScroll) }
     }
 
     override fun onDestroy() {
+        runCatching { prefs().unregisterOnSharedPreferenceChangeListener(langListener) }
+        saveMenu()
         view.save()
         for (h in handles) if (h.attached) runCatching { wm.removeView(h.v) }
         runCatching { wm.removeView(controls) }
