@@ -94,7 +94,9 @@ class BannerView(ctx: Context) : View(ctx) {
 
 class MainActivity : Activity() {
     private val gold = 0xFFFFD21F.toInt()
+    private var scroll: ScrollView? = null
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    private fun T(k: String) = Lang.t(this, k)
 
     private fun styled(label: String, bg: Int, fg: Int, onClick: () -> Unit): Button =
         Button(this).apply {
@@ -110,7 +112,15 @@ class MainActivity : Activity() {
             setOnClickListener { onClick() }
         }
 
-    private fun text(t: String, sp: Float, col: Int, bold: Boolean = false, center: Boolean = false) =
+    private fun langBtn(label: String, onClick: () -> Unit): Button =
+        styled(label, 0xFF0B0B0B.toInt(), gold, onClick).apply {
+            textSize = 13f
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(14), dp(6), dp(14), dp(6))
+        }
+
+    private fun label(t: String, sp: Float, col: Int, bold: Boolean = false, center: Boolean = false) =
         TextView(this).apply {
             text = t; textSize = sp; setTextColor(col)
             if (bold) typeface = Typeface.DEFAULT_BOLD
@@ -131,38 +141,44 @@ class MainActivity : Activity() {
         }
         val wrap = LinearLayout.LayoutParams.WRAP_CONTENT
         val match = LinearLayout.LayoutParams.MATCH_PARENT
+        val soft = Color.argb(235, 230, 240, 235)
 
-        card.addView(text("How to play", 22f, Color.WHITE, true, true),
+        card.addView(label(T("how_to_play"), 22f, Color.WHITE, true, true),
             LinearLayout.LayoutParams(match, wrap))
-        card.addView(text("1) Grant overlay permission.  2) Start overlay.  3) Open your table, tap the small ball icon to show the menu, then match the rectangle to the table.",
-            13f, Color.argb(235, 230, 240, 235), false, true),
+        card.addView(label(T("help_steps"), 13f, soft, false, true),
             LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(8) })
 
         val items = listOf(
-            Triple("Rectangle", "rect", "Drag the two white corner circles until the rectangle matches the table. Use Lock rectangle to freeze it, Hide rect to hide it, and Reset to start over."),
-            Triple("Touch circles", "touch", "Drag the red circle beside each dot to move it. The white ring is the grab area. C is the cue ball and 8 is the target ball."),
-            Triple("Single aim", "single", "A black line runs from C through 8 so you can see your aim direction."),
-            Triple("Bank shot", "bank", "Extends the aim line off a cushion, up to 2 banks."),
-            Triple("Double bank", "double", "Adds more cushion bounces, up to 4 banks."),
-            Triple("Pocket lines", "pockets", "Drag the center dot. Lines run from it to all six pockets."),
-            Triple("Ghost ball", "ghost", "Open the Ghost ball menu and tick the box to show the best pocket line and the ghost circle. Use Distance and Size to adjust the circle.")
+            Triple("h_rect", "rect", "d_rect"),
+            Triple("h_touch", "touch", "d_touch"),
+            Triple("h_single", "single", "d_single"),
+            Triple("h_bank", "bank", "d_bank"),
+            Triple("h_double", "double", "d_double"),
+            Triple("h_pockets", "pockets", "d_pockets"),
+            Triple("h_ghost", "ghost", "d_ghost")
         )
         for ((name, kind, desc) in items) {
-            card.addView(text(name, 16f, gold, true, true),
+            card.addView(label(T(name), 16f, gold, true, true),
                 LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(16) })
             card.addView(HowToDiagram(this, kind),
                 LinearLayout.LayoutParams(match, dp(170)).apply { topMargin = dp(6) })
-            card.addView(text(desc, 13f, Color.argb(235, 230, 240, 235), false, true),
+            card.addView(label(T(desc), 13f, soft, false, true),
                 LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(6) })
         }
-        card.addView(styled("Back to top", 0xFF0B0B0B.toInt(), gold) { onTop() },
+        card.addView(styled(T("back_top"), 0xFF0B0B0B.toInt(), gold) { onTop() },
             LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(18) })
         return card
     }
 
-    override fun onCreate(s: Bundle?) {
-        super.onCreate(s)
-        val scroll = ScrollView(this).apply { isFillViewport = true }
+    private fun switchLang(ar: Boolean) {
+        val y = scroll?.scrollY ?: 0
+        Lang.set(this, ar)
+        build(y)
+    }
+
+    private fun build(restoreY: Int) {
+        val sv = ScrollView(this).apply { isFillViewport = true }
+        scroll = sv
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(28), dp(16), dp(16))
@@ -175,22 +191,40 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(8) }
 
-        val card = helpCard { scroll.smoothScrollTo(0, 0) }
+        val isAr = Lang.isAr(this)
 
-        root.addView(styled("1) Grant overlay permission", 0xFF14532D.toInt(), Color.WHITE) {
+        val langRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+        }
+        val enBtn = langBtn("\uD83C\uDDEC\uD83C\uDDE7  English") { switchLang(false) }
+        val arBtn = langBtn("\uD83C\uDDF8\uD83C\uDDE6  العربية") { switchLang(true) }
+        enBtn.visibility = if (isAr) View.VISIBLE else View.GONE
+        arBtn.visibility = if (isAr) View.GONE else View.VISIBLE
+        langRow.addView(enBtn, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        langRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        langRow.addView(arBtn, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        root.addView(langRow, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+
+        val card = helpCard { sv.smoothScrollTo(0, 0) }
+
+        root.addView(styled(T("grant"), 0xFF14532D.toInt(), Color.WHITE) {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }, lp())
-        root.addView(styled("2) Start overlay", gold, Color.BLACK) {
+        root.addView(styled(T("start"), gold, Color.BLACK) {
             if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 1)
             if (!Settings.canDrawOverlays(this)) {
-                Toast.makeText(this, "Grant overlay permission first", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, T("grant_first"), Toast.LENGTH_LONG).show()
             } else startForegroundService(Intent(this, OverlayService::class.java))
         }, lp())
-        root.addView(styled("Stop overlay", 0xFF7F1D1D.toInt(), Color.WHITE) {
+        root.addView(styled(T("stop_overlay"), 0xFF7F1D1D.toInt(), Color.WHITE) {
             stopService(Intent(this, OverlayService::class.java))
         }, lp())
-        root.addView(styled("How to play", 0xFF0B0B0B.toInt(), gold) {
-            scroll.post { scroll.smoothScrollTo(0, card.top) }
+        root.addView(styled(T("how_to_play"), 0xFF0B0B0B.toInt(), gold) {
+            sv.post { sv.smoothScrollTo(0, card.top) }
         }, lp())
 
         val strip = LinearLayout(this).apply {
@@ -203,21 +237,11 @@ class MainActivity : Activity() {
                 setStroke(dp(2), gold)
             }
         }
-        strip.addView(TextView(this).apply {
-            text = "إعداد بواسطة المطور Emad Shettos"
-            setTextColor(gold)
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-        })
-        strip.addView(TextView(this).apply {
-            text = "WhatsApp: +201093532277"
-            setTextColor(0xFFEAEAEA.toInt())
-            textSize = 13f
-            gravity = Gravity.CENTER
-        }, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(8) })
+        strip.addView(label(T("dev"), 14f, gold, true, true))
+        strip.addView(label(T("whatsapp"), 13f, 0xFFEAEAEA.toInt(), false, true),
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(8) })
         root.addView(strip, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(14) })
@@ -231,7 +255,21 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(16) })
 
-        scroll.addView(root)
-        setContentView(scroll)
+        sv.addView(root)
+        setContentView(sv)
+        sv.post { sv.scrollTo(0, restoreY) }
+    }
+
+    override fun onCreate(s: Bundle?) {
+        super.onCreate(s)
+        val y = getSharedPreferences(Lang.PREFS, MODE_PRIVATE).getInt("main_scroll", 0)
+        build(y)
+    }
+
+    override fun onPause() {
+        scroll?.let {
+            getSharedPreferences(Lang.PREFS, MODE_PRIVATE).edit().putInt("main_scroll", it.scrollY).apply()
+        }
+        super.onPause()
     }
 }
