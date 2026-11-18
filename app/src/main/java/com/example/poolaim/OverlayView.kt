@@ -30,6 +30,7 @@ class OverlayView(ctx: Context) : View(ctx) {
     var ghostDistStep = 6
     var ghostSizeStep = 9
     var glowStep = 5
+    var glowSizeStep = 0
     var onChanged: (() -> Unit)? = null
     private var loaded = false
 
@@ -108,7 +109,7 @@ class OverlayView(ctx: Context) : View(ctx) {
 
     private fun place(which: String, x: Float, y: Float) {
         var (nx, ny) = Geometry.clamp(Pt(x, y), box())
-        if (flags["snap"] == true) {
+        if (flags["snap"] == true && flags["ghost"] == true) {
             val (pc, dd) = Geometry.nearestPocket(Pt(nx, ny), box())
             if (dd <= snapThresh) { nx = pc.first; ny = pc.second }
         }
@@ -126,11 +127,12 @@ class OverlayView(ctx: Context) : View(ctx) {
 
     private fun glowLine(c: Canvas, ax: Float, ay: Float, bx: Float, by: Float, rgb: Int, outerA: Int, innerA: Int) {
         if (flags["glow"] != true || glowStep <= 0) return
+        val k = 1f + glowSizeStep / 10f
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = pocketR
+        paint.strokeWidth = pocketR * k
         paint.color = (rgb and 0x00FFFFFF) or (glowAlpha(outerA) shl 24)
         c.drawLine(ax, ay, bx, by, paint)
-        paint.strokeWidth = pocketR * 0.6f
+        paint.strokeWidth = pocketR * 0.6f * k
         paint.color = (rgb and 0x00FFFFFF) or (glowAlpha(innerA) shl 24)
         c.drawLine(ax, ay, bx, by, paint)
     }
@@ -156,6 +158,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         paint.color = Color.argb(70, 255, 20, 20); c.drawCircle(x, y, 5.5f * d, paint)
         paint.color = Color.argb(150, 255, 30, 30); c.drawCircle(x, y, 3.5f * d, paint)
         paint.color = Color.rgb(255, 40, 40); c.drawCircle(x, y, 2f * d, paint)
+        paint.color = Color.BLACK; c.drawCircle(x, y, 0.9f * d, paint)
     }
 
     override fun onDraw(c: Canvas) {
@@ -180,7 +183,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         }
 
         var segs: List<Pair<Pt, Pt>> = emptyList()
-        var snapped = false
+        val snapped = false
         val dx = p2.x - p1.x
         val dy = p2.y - p1.y
         if (!aimHidden && (flags["bank"] == true || flags["double_bank"] == true) && (dx != 0f || dy != 0f)) {
@@ -189,15 +192,7 @@ class OverlayView(ctx: Context) : View(ctx) {
             val bw = max(2f * d, th + d)
             glowLine(c, p1.x, p1.y, p2.x, p2.y, Color.WHITE, 60, 110)
             line(c, p1.x, p1.y, p2.x, p2.y, bw, Color.BLACK)
-            val m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks).toMutableList()
-            if (m.isNotEmpty()) {
-                val last = m.last()
-                val (np, dd) = Geometry.nearestPocket(last.second, b)
-                if (dd <= pocketR * 1.4f) {
-                    m[m.lastIndex] = last.first to np; snapped = true
-                    ring(c, np.first, np.second, pocketR + 3 * d + 5 * d * pulse(), rgba((120 + 130 * pulse()).toInt()))
-                }
-            }
+            val m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks)
             segs = m
             for ((i, s) in m.withIndex()) {
                 glowLine(c, s.first.first, s.first.second, s.second.first, s.second.second, Color.WHITE, 60, 110)
@@ -308,7 +303,8 @@ class OverlayView(ctx: Context) : View(ctx) {
             putFloat("p1x", p1.x); putFloat("p1y", p1.y); putFloat("p2x", p2.x); putFloat("p2y", p2.y)
             putFloat("mx", marker.x); putFloat("my", marker.y)
             putFloat("thick", thickness); putInt("theme", themeIdx)
-            putInt("gdist", ghostDistStep); putInt("gsize", ghostSizeStep); putInt("glow_step", glowStep)
+            putInt("gdist", ghostDistStep); putInt("gsize", ghostSizeStep)
+            putInt("glow_step", glowStep); putInt("glow_size", glowSizeStep)
             putBoolean("locked", locked); putBoolean("rect_hidden", rectHidden)
             putBoolean("aim_hidden", aimHidden); putBoolean("hide_all", hideAll)
             for ((k, v) in flags) putBoolean("f_$k", v)
@@ -320,6 +316,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         ghostDistStep = prefs.getInt("gdist", 6).coerceIn(0, 10)
         ghostSizeStep = prefs.getInt("gsize", 9).coerceIn(0, 9)
         glowStep = prefs.getInt("glow_step", 5).coerceIn(0, 10)
+        glowSizeStep = prefs.getInt("glow_size", 0).coerceIn(0, 10)
         locked = prefs.getBoolean("locked", false)
         rectHidden = prefs.getBoolean("rect_hidden", false)
         aimHidden = prefs.getBoolean("aim_hidden", false)
