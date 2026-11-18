@@ -19,15 +19,17 @@ class OverlayView(ctx: Context) : View(ctx) {
     val marker = PointF()
     val flags = linkedMapOf(
         "lines" to true, "single" to true, "bank" to true, "double_bank" to true,
-        "ghost" to true, "hud" to true, "animate" to false, "snap" to true
+        "ghost" to true, "hud" to true, "animate" to false, "snap" to true, "glow" to false
     )
     var thickness = 3f
     var themeIdx = 0
     var locked = false
     var rectHidden = false
     var aimHidden = false
+    var hideAll = false
     var ghostDistStep = 6
     var ghostSizeStep = 9
+    var glowStep = 5
     var onChanged: (() -> Unit)? = null
     private var loaded = false
 
@@ -120,6 +122,19 @@ class OverlayView(ctx: Context) : View(ctx) {
     }
 
     // ---------- drawing ----------
+    private fun glowAlpha(base: Int) = (base * glowStep / 5f).toInt().coerceIn(0, 255)
+
+    private fun glowLine(c: Canvas, ax: Float, ay: Float, bx: Float, by: Float, rgb: Int, outerA: Int, innerA: Int) {
+        if (flags["glow"] != true || glowStep <= 0) return
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = pocketR
+        paint.color = (rgb and 0x00FFFFFF) or (glowAlpha(outerA) shl 24)
+        c.drawLine(ax, ay, bx, by, paint)
+        paint.strokeWidth = pocketR * 0.6f
+        paint.color = (rgb and 0x00FFFFFF) or (glowAlpha(innerA) shl 24)
+        c.drawLine(ax, ay, bx, by, paint)
+    }
+
     private fun line(c: Canvas, ax: Float, ay: Float, bx: Float, by: Float, w: Float, col: Int) {
         paint.style = Paint.Style.STROKE; paint.strokeWidth = w; paint.color = col
         c.drawLine(ax, ay, bx, by, paint)
@@ -144,6 +159,7 @@ class OverlayView(ctx: Context) : View(ctx) {
     }
 
     override fun onDraw(c: Canvas) {
+        if (hideAll) return
         val th = thickness * d
         val b = box()
         val pockets = Geometry.pocketCenters(b)
@@ -155,9 +171,11 @@ class OverlayView(ctx: Context) : View(ctx) {
         }
 
         if (flags["lines"] == true) {
+            for (p in pockets) glowLine(c, marker.x, marker.y, p.first, p.second, color, 30, 70)
             for (p in pockets) line(c, marker.x, marker.y, p.first, p.second, th, color)
         }
         if (!aimHidden && flags["single"] == true) {
+            glowLine(c, p1.x, p1.y, p2.x, p2.y, Color.WHITE, 60, 110)
             line(c, p1.x, p1.y, p2.x, p2.y, th, Color.BLACK)
         }
 
@@ -169,6 +187,7 @@ class OverlayView(ctx: Context) : View(ctx) {
             val len = hypot(dx, dy)
             val maxBanks = if (flags["double_bank"] == true) 4 else 2
             val bw = max(2f * d, th + d)
+            glowLine(c, p1.x, p1.y, p2.x, p2.y, Color.WHITE, 60, 110)
             line(c, p1.x, p1.y, p2.x, p2.y, bw, Color.BLACK)
             val m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks).toMutableList()
             if (m.isNotEmpty()) {
@@ -181,6 +200,7 @@ class OverlayView(ctx: Context) : View(ctx) {
             }
             segs = m
             for ((i, s) in m.withIndex()) {
+                glowLine(c, s.first.first, s.first.second, s.second.first, s.second.second, Color.WHITE, 60, 110)
                 line(c, s.first.first, s.first.second, s.second.first, s.second.second, bw, Color.BLACK)
                 if (i < m.size - 1) {
                     paint.style = Paint.Style.FILL; paint.color = Color.argb(200, 0, 0, 0)
@@ -288,8 +308,9 @@ class OverlayView(ctx: Context) : View(ctx) {
             putFloat("p1x", p1.x); putFloat("p1y", p1.y); putFloat("p2x", p2.x); putFloat("p2y", p2.y)
             putFloat("mx", marker.x); putFloat("my", marker.y)
             putFloat("thick", thickness); putInt("theme", themeIdx)
-            putInt("gdist", ghostDistStep); putInt("gsize", ghostSizeStep)
-            putBoolean("locked", locked); putBoolean("rect_hidden", rectHidden); putBoolean("aim_hidden", aimHidden)
+            putInt("gdist", ghostDistStep); putInt("gsize", ghostSizeStep); putInt("glow_step", glowStep)
+            putBoolean("locked", locked); putBoolean("rect_hidden", rectHidden)
+            putBoolean("aim_hidden", aimHidden); putBoolean("hide_all", hideAll)
             for ((k, v) in flags) putBoolean("f_$k", v)
             apply()
         }
@@ -298,9 +319,11 @@ class OverlayView(ctx: Context) : View(ctx) {
     private fun load() {
         ghostDistStep = prefs.getInt("gdist", 6).coerceIn(0, 10)
         ghostSizeStep = prefs.getInt("gsize", 9).coerceIn(0, 9)
+        glowStep = prefs.getInt("glow_step", 5).coerceIn(0, 10)
         locked = prefs.getBoolean("locked", false)
         rectHidden = prefs.getBoolean("rect_hidden", false)
         aimHidden = prefs.getBoolean("aim_hidden", false)
+        hideAll = prefs.getBoolean("hide_all", false)
         thickness = prefs.getFloat("thick", 3f).coerceIn(1f, 10f)
         themeIdx = prefs.getInt("theme", 0).coerceIn(0, THEMES.size - 1)
         for (k in flags.keys.toList()) flags[k] = prefs.getBoolean("f_$k", flags[k]!!)
