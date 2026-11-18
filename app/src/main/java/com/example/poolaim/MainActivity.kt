@@ -112,8 +112,8 @@ class MainActivity : Activity() {
             setOnClickListener { onClick() }
         }
 
-    private fun langBtn(label: String, onClick: () -> Unit): Button =
-        styled(label, 0xFF0B0B0B.toInt(), gold, onClick).apply {
+    private fun smallBtn(label: String, bg: Int, fg: Int, onClick: () -> Unit): Button =
+        styled(label, bg, fg, onClick).apply {
             textSize = 13f
             minHeight = 0
             minimumHeight = 0
@@ -197,14 +197,18 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
-        val enBtn = langBtn("\uD83C\uDDEC\uD83C\uDDE7  English") { switchLang(false) }
-        val arBtn = langBtn("\uD83C\uDDF8\uD83C\uDDE6  العربية") { switchLang(true) }
-        enBtn.visibility = if (isAr) View.VISIBLE else View.GONE
-        arBtn.visibility = if (isAr) View.GONE else View.VISIBLE
-        langRow.addView(enBtn, LinearLayout.LayoutParams(
+        val enBtn = smallBtn("\uD83C\uDDEC\uD83C\uDDE7  English", 0xFF0B0B0B.toInt(), gold) { switchLang(false) }
+        val arBtn = smallBtn("\uD83C\uDDF8\uD83C\uDDE6  العربية", 0xFF0B0B0B.toInt(), gold) { switchLang(true) }
+        val exitBtn = smallBtn("\u2715  ${T("exit")}", 0xFF7F1D1D.toInt(), Color.WHITE) {
+            stopService(Intent(this, OverlayService::class.java))
+            finishAndRemoveTask()
+        }
+        val leftV = if (isAr) enBtn else exitBtn
+        val rightV = if (isAr) exitBtn else arBtn
+        langRow.addView(leftV, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         langRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        langRow.addView(arBtn, LinearLayout.LayoutParams(
+        langRow.addView(rightV, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         root.addView(langRow, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
