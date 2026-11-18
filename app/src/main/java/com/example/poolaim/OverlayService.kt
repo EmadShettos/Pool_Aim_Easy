@@ -53,6 +53,8 @@ object Lang {
         "stop_overlay" to "Stop overlay",
         "how_to_play" to "How to play",
         "exit" to "Exit",
+        "lang_en_btn" to "English",
+        "lang_ar_btn" to "Arabic",
         "dev" to "Developed by Emad Shettos",
         "whatsapp" to "WhatsApp: +201093532277",
         "grant_first" to "Grant overlay permission first",
@@ -109,6 +111,8 @@ object Lang {
         "stop_overlay" to "إيقاف العرض",
         "how_to_play" to "كيف تلعب",
         "exit" to "خروج",
+        "lang_en_btn" to "الإنجليزية",
+        "lang_ar_btn" to "العربية",
         "dev" to "إعداد بواسطة المطور Emad Shettos",
         "whatsapp" to "WhatsApp: +201093532277",
         "grant_first" to "امنح إذن العرض فوق التطبيقات أولاً",
@@ -230,6 +234,7 @@ class HowToDiagram(ctx: Context, private val kind: String) : View(ctx) {
             p.style = Paint.Style.FILL
             p.color = Color.argb(90, 255, 20, 20); c.drawCircle(X(x), Y(y), 5f * d, p)
             p.color = Color.rgb(255, 40, 40); c.drawCircle(X(x), Y(y), 2.2f * d, p)
+            p.color = Color.BLACK; c.drawCircle(X(x), Y(y), 1f * d, p)
         }
         fun touch(x: Float, y: Float) {
             p.style = Paint.Style.FILL; p.color = Color.argb(70, 255, 60, 60)
@@ -531,6 +536,9 @@ class OverlayService : Service() {
         panel.addView(flagRow(T("m_glow"), "glow", true))
         panel.addView(seekRow(T("m_transparency"), 10, view.glowStep) { v ->
             view.glowStep = v; view.invalidate()
+        })
+        panel.addView(seekRow(T("m_size"), 10, view.glowSizeStep) { v ->
+            view.glowSizeStep = v; view.invalidate()
         })
         return panel
     }
