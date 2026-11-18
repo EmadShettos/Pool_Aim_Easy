@@ -17,6 +17,9 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -64,11 +67,11 @@ object Lang {
         "d_rect" to "Drag the two white corner circles until the rectangle matches the table. Use Lock rectangle to freeze it, Hide rect to hide it, and Reset to start over.",
         "h_touch" to "Touch circles",
         "d_touch" to "Drag the red circle beside each dot to move it. The white ring is the grab area. C is the cue ball and 8 is the target ball.",
-        "h_single" to "Single aim",
+        "h_single" to "1 Line",
         "d_single" to "A black line runs from C through 8 so you can see your aim direction.",
-        "h_bank" to "Bank shot",
+        "h_bank" to "2 Line",
         "d_bank" to "Extends the aim line off a cushion, up to 2 banks.",
-        "h_double" to "Double bank",
+        "h_double" to "4 Line",
         "d_double" to "Adds more cushion bounces, up to 4 banks.",
         "h_pockets" to "Pocket lines",
         "d_pockets" to "Drag the center dot. Lines run from it to all six pockets.",
@@ -86,15 +89,14 @@ object Lang {
         "m_line_plus" to "Line +",
         "m_line_minus" to "Line -",
         "m_ghost" to "Ghost ball",
+        "m_c8_title" to "C-8 line (Bank Shot)",
         "m_c8" to "C-8 line",
+        "m_line" to "Line",
         "m_glow" to "Guide line glow",
         "m_transparency" to "Transparency",
         "m_distance" to "Distance",
         "m_size" to "Size",
         "m_pockets" to "Pocket lines",
-        "m_single" to "Single aim",
-        "m_bank" to "Bank shot",
-        "m_double" to "Double bank",
         "m_hud" to "HUD",
         "m_snap" to "Snap to pockets",
         "hud_locked" to "Rect locked",
@@ -122,11 +124,11 @@ object Lang {
         "d_rect" to "اسحب الدائرتين البيضاوين في الزاويتين حتى يطابق المستطيل الطاولة. استخدم قفل المستطيل لتثبيته، وإخفاء المستطيل لإخفائه، وإعادة الضبط للبدء من جديد.",
         "h_touch" to "دوائر اللمس",
         "d_touch" to "اسحب الدائرة الحمراء بجوار كل نقطة لتحريكها. الحلقة البيضاء هي منطقة اللمس. C هي الكرة البيضاء و8 هي الكرة المستهدفة.",
-        "h_single" to "التصويب المباشر",
+        "h_single" to "خط 1",
         "d_single" to "خط أسود يمتد من C عبر 8 ليوضح لك اتجاه التصويب.",
-        "h_bank" to "الضربة المرتدة",
+        "h_bank" to "خط 2",
         "d_bank" to "يمتد خط التصويب بعد الارتداد عن الجدار، حتى ارتدادين.",
-        "h_double" to "الارتداد المزدوج",
+        "h_double" to "خط 4",
         "d_double" to "يضيف ارتدادات أكثر عن الجدران، حتى 4 ارتدادات.",
         "h_pockets" to "خطوط الجيوب",
         "d_pockets" to "اسحب النقطة المركزية. تمتد خطوط منها إلى الجيوب الستة.",
@@ -144,15 +146,14 @@ object Lang {
         "m_line_plus" to "سماكة +",
         "m_line_minus" to "سماكة -",
         "m_ghost" to "الكرة الشبحية",
+        "m_c8_title" to "خط C-8 (ضربة مرتدة)",
         "m_c8" to "خط C-8",
+        "m_line" to "خط",
         "m_glow" to "هالة الخط",
         "m_transparency" to "الشفافية",
         "m_distance" to "المسافة",
         "m_size" to "الحجم",
         "m_pockets" to "خطوط الجيوب",
-        "m_single" to "تصويب مباشر",
-        "m_bank" to "ضربة مرتدة",
-        "m_double" to "ارتداد مزدوج",
         "m_hud" to "الشريط العلوي",
         "m_snap" to "الالتصاق بالجيوب",
         "hud_locked" to "المستطيل مقفل",
@@ -431,7 +432,7 @@ class OverlayService : Service() {
         } else startForeground(1, n)
     }
 
-    private fun btn(label: String, action: (Button) -> Unit): Button =
+    private fun btn(label: CharSequence, action: (Button) -> Unit): Button =
         Button(this).apply {
             text = label
             isAllCaps = false
@@ -509,7 +510,39 @@ class OverlayService : Service() {
 
     private fun ghostPanel(open: Boolean): LinearLayout {
         val panel = panelBase(open)
-        panel.addView(flagRow(T("m_ghost"), "ghost", true))
+        
+        // الصف الأول: Ghost ball وبجواره Snap to pockets في نفس الصف بمسافة قريبة
+        val row1 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        
+        val tvGhost = tv(T("m_ghost"), 11f, Color.WHITE, true)
+        val cbGhost = CheckBox(this).apply {
+            isChecked = view.flags["ghost"] == true
+            buttonTintList = ColorStateList.valueOf(Color.WHITE)
+            setOnCheckedChangeListener { _, on ->
+                if ((view.flags["ghost"] == true) != on) view.toggle("ghost")
+                syncHandles()
+            }
+        }
+        
+        val tvSnap = tv(T("m_snap"), 10f, Color.argb(220, 255, 255, 255), false)
+        val cbSnap = CheckBox(this).apply {
+            isChecked = view.flags["snap"] == true
+            buttonTintList = ColorStateList.valueOf(Color.WHITE)
+            setOnCheckedChangeListener { _, on ->
+                if ((view.flags["snap"] == true) != on) view.toggle("snap")
+            }
+        }
+
+        row1.addView(tvGhost)
+        row1.addView(cbGhost)
+        row1.addView(View(this), LinearLayout.LayoutParams((10 * d).toInt(), 1))
+        row1.addView(tvSnap)
+        row1.addView(cbSnap)
+        panel.addView(row1)
+
         panel.addView(seekRow(T("m_distance"), 10, view.ghostDistStep) { v ->
             view.ghostDistStep = v; view.invalidate()
         })
@@ -521,13 +554,46 @@ class OverlayService : Service() {
 
     private fun c8Panel(open: Boolean): LinearLayout {
         val panel = panelBase(open)
+        
+        // السطر الأول: C-8 line وبجواره مربع التشغيل الرئيسي
         panel.addView(checkRow(T("m_c8"), !view.aimHidden, true) { on ->
             view.aimHidden = !on
             view.save(); view.invalidate(); syncHandles()
         })
-        panel.addView(flagRow(T("m_single"), "single", false))
-        panel.addView(flagRow(T("m_bank"), "bank", false))
-        panel.addView(flagRow(T("m_double"), "double_bank", false))
+        
+        // السطر الثاني: كلمة Line وبجوارها في نفس الصف مربعات 1 و 2 و 4
+        val rowLines = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, (4 * d).toInt(), 0, 0)
+        }
+        rowLines.addView(tv(T("m_line"), 11f, Color.WHITE, true),
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f))
+
+        fun addMiniCheck(num: String, key: String) {
+            val h = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding((2 * d).toInt(), 0, (2 * d).toInt(), 0)
+            }
+            h.addView(tv(num, 11f, Color.rgb(0, 229, 255), true))
+            val cb = CheckBox(this).apply {
+                isChecked = view.flags[key] == true
+                buttonTintList = ColorStateList.valueOf(Color.WHITE)
+                setOnCheckedChangeListener { _, on ->
+                    if ((view.flags[key] == true) != on) view.toggle(key)
+                    syncHandles()
+                }
+            }
+            h.addView(cb)
+            rowLines.addView(h, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+
+        addMiniCheck("1", "single")
+        addMiniCheck("2", "bank")
+        addMiniCheck("4", "double_bank")
+        panel.addView(rowLines)
+
         return panel
     }
 
@@ -633,6 +699,16 @@ class OverlayService : Service() {
         val panelW = (220 * d).toInt()
         val panelLp = { LinearLayout.LayoutParams(panelW, LinearLayout.LayoutParams.WRAP_CONTENT) }
 
+        // صياغة اسم الزر C-8 line (Bank Shot) بحيث يكون ما بين القوسين بحجم أصغر قليلاً
+        val rawTitle = T("m_c8_title")
+        val styledC8Title = SpannableString(rawTitle).apply {
+            val openIdx = rawTitle.indexOf('(')
+            if (openIdx >= 0) {
+                setSpan(RelativeSizeSpan(0.82f), openIdx, rawTitle.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+
+        // الترتيب الدقيق المطلوب للأزرار من الأعلى للأسفل:
         list.addView(btn(T(if (view.hideAll) "m_show_all" else "m_hide_all")) { b ->
             view.hideAll = !view.hideAll
             b.text = T(if (view.hideAll) "m_show_all" else "m_hide_all")
@@ -649,7 +725,7 @@ class OverlayService : Service() {
             view.save(); view.invalidate(); syncHandles()
         })
         list.addView(btn(T("m_pockets")) { view.toggle("lines"); syncHandles() })
-        list.addView(btn(T("m_c8")) { togglePanel(c8) })
+        list.addView(btn(styledC8Title) { togglePanel(c8) })
         list.addView(c8, panelLp())
         list.addView(btn(T("m_ghost")) { togglePanel(ghost) })
         list.addView(ghost, panelLp())
@@ -657,10 +733,9 @@ class OverlayService : Service() {
         list.addView(btn(T("m_line_minus")) { view.thicker(-1f) })
         list.addView(btn(T("m_glow")) { togglePanel(glow) })
         list.addView(glow, panelLp())
-        list.addView(btn(T("m_reset")) { view.resetLayout(); view.save() })
         list.addView(btn(T("m_theme")) { view.nextTheme() })
-        list.addView(btn(T("m_snap")) { view.toggle("snap") })
         list.addView(btn(T("m_hud")) { view.toggle("hud") })
+        list.addView(btn(T("m_reset")) { view.resetLayout(); view.save() })
         list.addView(btn(T("m_stop")) { stopSelf() })
 
         val scrollH = (min(dm.widthPixels, dm.heightPixels) * 0.45f).toInt()
