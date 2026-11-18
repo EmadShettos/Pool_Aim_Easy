@@ -19,7 +19,7 @@ class OverlayView(ctx: Context) : View(ctx) {
     val marker = PointF()
     val flags = linkedMapOf(
         "lines" to true, "single" to true, "bank" to true, "double_bank" to true,
-        "ghost" to true, "hud" to true, "animate" to false, "snap" to true, "glow" to false
+        "ghost" to true, "hud" to true, "animate" to false, "snap" to false, "glow" to false
     )
     var thickness = 3f
     var themeIdx = 0
