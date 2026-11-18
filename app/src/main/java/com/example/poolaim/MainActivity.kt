@@ -197,8 +197,8 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
-        val enBtn = smallBtn("\uD83C\uDDEC\uD83C\uDDE7  English", 0xFF0B0B0B.toInt(), gold) { switchLang(false) }
-        val arBtn = smallBtn("\uD83C\uDDF8\uD83C\uDDE6  العربية", 0xFF0B0B0B.toInt(), gold) { switchLang(true) }
+        val enBtn = smallBtn("\uD83C\uDDEC\uD83C\uDDE7  ${T("lang_en_btn")}", 0xFF0B0B0B.toInt(), gold) { switchLang(false) }
+        val arBtn = smallBtn("\uD83C\uDDF8\uD83C\uDDE6  ${T("lang_ar_btn")}", 0xFF0B0B0B.toInt(), gold) { switchLang(true) }
         val exitBtn = smallBtn("\u2715  ${T("exit")}", 0xFF7F1D1D.toInt(), Color.WHITE) {
             stopService(Intent(this, OverlayService::class.java))
             finishAndRemoveTask()
