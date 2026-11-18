@@ -52,6 +52,7 @@ object Lang {
         "start" to "2) Start overlay",
         "stop_overlay" to "Stop overlay",
         "how_to_play" to "How to play",
+        "exit" to "Exit",
         "dev" to "Developed by Emad Shettos",
         "whatsapp" to "WhatsApp: +201093532277",
         "grant_first" to "Grant overlay permission first",
@@ -71,11 +72,11 @@ object Lang {
         "d_pockets" to "Drag the center dot. Lines run from it to all six pockets.",
         "h_ghost" to "Ghost ball",
         "d_ghost" to "Open the Ghost ball menu and tick the box to show the best pocket line and the ghost circle. Use Distance and Size to adjust the circle.",
+        "m_hide_all" to "Hide all",
+        "m_show_all" to "Show",
         "m_stop" to "Stop",
         "m_hide_rect" to "Hide rect",
         "m_show_rect" to "Show rect",
-        "m_hide_c8" to "Hide C-8 line",
-        "m_show_c8" to "Show C-8 line",
         "m_lock" to "Lock rectangle",
         "m_unlock" to "Unlock rectangle",
         "m_reset" to "Reset",
@@ -83,6 +84,9 @@ object Lang {
         "m_line_plus" to "Line +",
         "m_line_minus" to "Line -",
         "m_ghost" to "Ghost ball",
+        "m_c8" to "C-8 line",
+        "m_glow" to "Guide line glow",
+        "m_transparency" to "Transparency",
         "m_distance" to "Distance",
         "m_size" to "Size",
         "m_pockets" to "Pocket lines",
@@ -104,6 +108,7 @@ object Lang {
         "start" to "2) تشغيل العرض",
         "stop_overlay" to "إيقاف العرض",
         "how_to_play" to "كيف تلعب",
+        "exit" to "خروج",
         "dev" to "إعداد بواسطة المطور Emad Shettos",
         "whatsapp" to "WhatsApp: +201093532277",
         "grant_first" to "امنح إذن العرض فوق التطبيقات أولاً",
@@ -123,11 +128,11 @@ object Lang {
         "d_pockets" to "اسحب النقطة المركزية. تمتد خطوط منها إلى الجيوب الستة.",
         "h_ghost" to "الكرة الشبحية",
         "d_ghost" to "افتح قائمة الكرة الشبحية وعلّم المربع لإظهار أفضل خط للجيب والدائرة الشبحية. استخدم المسافة والحجم لضبط الدائرة.",
+        "m_hide_all" to "إخفاء الكل",
+        "m_show_all" to "إظهار",
         "m_stop" to "إيقاف",
         "m_hide_rect" to "إخفاء المستطيل",
         "m_show_rect" to "إظهار المستطيل",
-        "m_hide_c8" to "إخفاء خط C-8",
-        "m_show_c8" to "إظهار خط C-8",
         "m_lock" to "قفل المستطيل",
         "m_unlock" to "فتح المستطيل",
         "m_reset" to "إعادة ضبط",
@@ -135,6 +140,9 @@ object Lang {
         "m_line_plus" to "سماكة +",
         "m_line_minus" to "سماكة -",
         "m_ghost" to "الكرة الشبحية",
+        "m_c8" to "خط C-8",
+        "m_glow" to "هالة الخط",
+        "m_transparency" to "الشفافية",
         "m_distance" to "المسافة",
         "m_size" to "الحجم",
         "m_pockets" to "خطوط الجيوب",
@@ -295,6 +303,8 @@ class OverlayService : Service() {
     private lateinit var controls: LinearLayout
     private lateinit var menuScroll: ScrollView
     private lateinit var ghostPanelView: LinearLayout
+    private lateinit var c8PanelView: LinearLayout
+    private lateinit var glowPanelView: LinearLayout
     private lateinit var controlsParams: WindowManager.LayoutParams
     private lateinit var overlayParams: WindowManager.LayoutParams
     private val handles = mutableListOf<Handle>()
@@ -388,7 +398,7 @@ class OverlayService : Service() {
         val loc = IntArray(2)
         view.getLocationOnScreen(loc)
         for (h in handles) {
-            val active = when (h.key) {
+            val active = if (view.hideAll) false else when (h.key) {
                 "tl", "br" -> !view.locked && !view.rectHidden
                 "marker" -> view.flags["lines"] == true
                 "p1", "p2" -> !view.aimHidden
@@ -442,6 +452,32 @@ class OverlayService : Service() {
         setStroke((1.2f * d).toInt().coerceAtLeast(1), Color.argb(150, 0, 229, 255))
     }
 
+    private fun panelBase(open: Boolean): LinearLayout {
+        val pad = (8 * d).toInt()
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, pad)
+            background = darkBox()
+            visibility = if (open) View.VISIBLE else View.GONE
+        }
+    }
+
+    private fun checkRow(title: String, checked: Boolean, bold: Boolean, onChange: (Boolean) -> Unit): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        row.addView(tv(title, if (bold) 12f else 11f, Color.WHITE, bold),
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val cb = CheckBox(this).apply {
+            isChecked = checked
+            buttonTintList = ColorStateList.valueOf(Color.WHITE)
+            setOnCheckedChangeListener { _, on -> onChange(on) }
+        }
+        row.addView(cb)
+        return row
+    }
+
     private fun seekRow(title: String, maxV: Int, init: Int, onChange: (Int) -> Unit): LinearLayout {
         val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         row.addView(tv(title, 11f, Color.WHITE, true))
@@ -460,26 +496,15 @@ class OverlayService : Service() {
         return row
     }
 
+    private fun flagRow(label: String, key: String, bold: Boolean): LinearLayout =
+        checkRow(label, view.flags[key] == true, bold) { on ->
+            if ((view.flags[key] == true) != on) view.toggle(key)
+            syncHandles()
+        }
+
     private fun ghostPanel(open: Boolean): LinearLayout {
-        val pad = (8 * d).toInt()
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
-            background = darkBox()
-            visibility = if (open) View.VISIBLE else View.GONE
-        }
-        val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        row1.addView(tv(T("m_ghost"), 12f, Color.WHITE, true),
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        val cb = CheckBox(this).apply {
-            isChecked = view.flags["ghost"] == true
-            buttonTintList = ColorStateList.valueOf(Color.WHITE)
-            setOnCheckedChangeListener { _, on ->
-                if ((view.flags["ghost"] == true) != on) view.toggle("ghost")
-            }
-        }
-        row1.addView(cb)
-        panel.addView(row1)
+        val panel = panelBase(open)
+        panel.addView(flagRow(T("m_ghost"), "ghost", true))
         panel.addView(seekRow(T("m_distance"), 10, view.ghostDistStep) { v ->
             view.ghostDistStep = v; view.invalidate()
         })
@@ -489,13 +514,37 @@ class OverlayService : Service() {
         return panel
     }
 
+    private fun c8Panel(open: Boolean): LinearLayout {
+        val panel = panelBase(open)
+        panel.addView(checkRow(T("m_c8"), !view.aimHidden, true) { on ->
+            view.aimHidden = !on
+            view.save(); view.invalidate(); syncHandles()
+        })
+        panel.addView(flagRow(T("m_single"), "single", false))
+        panel.addView(flagRow(T("m_bank"), "bank", false))
+        panel.addView(flagRow(T("m_double"), "double_bank", false))
+        return panel
+    }
+
+    private fun glowPanel(open: Boolean): LinearLayout {
+        val panel = panelBase(open)
+        panel.addView(flagRow(T("m_glow"), "glow", true))
+        panel.addView(seekRow(T("m_transparency"), 10, view.glowStep) { v ->
+            view.glowStep = v; view.invalidate()
+        })
+        return panel
+    }
+
     private fun saveMenu() {
-        if (!::controls.isInitialized || !::menuScroll.isInitialized || !::ghostPanelView.isInitialized) return
+        if (!::controls.isInitialized || !::menuScroll.isInitialized ||
+            !::ghostPanelView.isInitialized || !::c8PanelView.isInitialized || !::glowPanelView.isInitialized) return
         prefs().edit()
             .putInt("menu_x", controlsParams.x)
             .putInt("menu_y", controlsParams.y)
             .putBoolean("menu_open", menuScroll.visibility == View.VISIBLE)
             .putBoolean("ghost_open", ghostPanelView.visibility == View.VISIBLE)
+            .putBoolean("c8_open", c8PanelView.visibility == View.VISIBLE)
+            .putBoolean("glow_open", glowPanelView.visibility == View.VISIBLE)
             .putInt("menu_scroll", menuScroll.scrollY)
             .apply()
     }
@@ -506,6 +555,11 @@ class OverlayService : Service() {
         buildControls()
     }
 
+    private fun togglePanel(p: View) {
+        p.visibility = if (p.visibility == View.GONE) View.VISIBLE else View.GONE
+        saveMenu()
+    }
+
     private fun buildControls() {
         val dm = resources.displayMetrics
         val sp = prefs()
@@ -513,7 +567,6 @@ class OverlayService : Service() {
         val startX = sp.getInt("menu_x", 16).coerceIn(0, (dm.widthPixels - bs).coerceAtLeast(0))
         val startY = sp.getInt("menu_y", 120).coerceIn(0, (dm.heightPixels - bs).coerceAtLeast(0))
         val menuOpen = sp.getBoolean("menu_open", false)
-        val ghostOpen = sp.getBoolean("ghost_open", false)
         val savedScroll = sp.getInt("menu_scroll", 0)
 
         controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -526,8 +579,12 @@ class OverlayService : Service() {
             }
         }
         menuScroll = scroll
-        val ghost = ghostPanel(ghostOpen)
+        val ghost = ghostPanel(sp.getBoolean("ghost_open", false))
+        val c8 = c8Panel(sp.getBoolean("c8_open", false))
+        val glow = glowPanel(sp.getBoolean("glow_open", false))
         ghostPanelView = ghost
+        c8PanelView = c8
+        glowPanelView = glow
 
         controlsParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
@@ -566,16 +623,16 @@ class OverlayService : Service() {
         }
 
         val panelW = (220 * d).toInt()
+        val panelLp = { LinearLayout.LayoutParams(panelW, LinearLayout.LayoutParams.WRAP_CONTENT) }
 
-        list.addView(btn(T("m_stop")) { stopSelf() })
+        list.addView(btn(T(if (view.hideAll) "m_show_all" else "m_hide_all")) { b ->
+            view.hideAll = !view.hideAll
+            b.text = T(if (view.hideAll) "m_show_all" else "m_hide_all")
+            view.save(); view.invalidate(); syncHandles()
+        })
         list.addView(btn(T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")) { b ->
             view.rectHidden = !view.rectHidden
             b.text = T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")
-            view.save(); view.invalidate(); syncHandles()
-        })
-        list.addView(btn(T(if (view.aimHidden) "m_show_c8" else "m_hide_c8")) { b ->
-            view.aimHidden = !view.aimHidden
-            b.text = T(if (view.aimHidden) "m_show_c8" else "m_hide_c8")
             view.save(); view.invalidate(); syncHandles()
         })
         list.addView(btn(T(if (view.locked) "m_unlock" else "m_lock")) { b ->
@@ -583,20 +640,20 @@ class OverlayService : Service() {
             b.text = T(if (view.locked) "m_unlock" else "m_lock")
             view.save(); view.invalidate(); syncHandles()
         })
-        list.addView(btn(T("m_reset")) { view.resetLayout(); view.save() })
-        list.addView(btn(T("m_theme")) { view.nextTheme() })
+        list.addView(btn(T("m_pockets")) { view.toggle("lines"); syncHandles() })
+        list.addView(btn(T("m_c8")) { togglePanel(c8) })
+        list.addView(c8, panelLp())
+        list.addView(btn(T("m_ghost")) { togglePanel(ghost) })
+        list.addView(ghost, panelLp())
         list.addView(btn(T("m_line_plus")) { view.thicker(1f) })
         list.addView(btn(T("m_line_minus")) { view.thicker(-1f) })
-        list.addView(btn(T("m_ghost")) {
-            ghost.visibility = if (ghost.visibility == View.GONE) View.VISIBLE else View.GONE
-            saveMenu()
-        })
-        list.addView(ghost, LinearLayout.LayoutParams(panelW, LinearLayout.LayoutParams.WRAP_CONTENT))
-        val names = linkedMapOf(
-            "lines" to "m_pockets", "single" to "m_single", "bank" to "m_bank",
-            "double_bank" to "m_double", "hud" to "m_hud", "snap" to "m_snap"
-        )
-        for ((k, n) in names) list.addView(btn(T(n)) { view.toggle(k); syncHandles() })
+        list.addView(btn(T("m_glow")) { togglePanel(glow) })
+        list.addView(glow, panelLp())
+        list.addView(btn(T("m_reset")) { view.resetLayout(); view.save() })
+        list.addView(btn(T("m_theme")) { view.nextTheme() })
+        list.addView(btn(T("m_snap")) { view.toggle("snap") })
+        list.addView(btn(T("m_hud")) { view.toggle("hud") })
+        list.addView(btn(T("m_stop")) { stopSelf() })
 
         val scrollH = (min(dm.widthPixels, dm.heightPixels) * 0.45f).toInt()
         controls.addView(ball, LinearLayout.LayoutParams(bs, bs))
