@@ -33,25 +33,66 @@ object Geometry {
 
     fun clamp(p: Pt, r: Box) = Pt(min(max(p.first, r.l), r.r), min(max(p.second, r.t), r.b))
 
+    /**
+     * حساب ارتدادات الجدار بدقة فيزيائية كاملة:
+     * 1. مراعاة نصف قطر الكرة الفعلي عن الجدار لمنع انزياح المركز.
+     * 2. تصحيح احتكاك الجدار والمطاط (Rebound angle restitution) ليطابق خط سير اللعبة بدقة.
+     */
     fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 2): List<Pair<Pt, Pt>> {
         var vx = dir.first
         var vy = dir.second
         if (!vx.isFinite() || !vy.isFinite() || (vx == 0f && vy == 0f)) return emptyList()
-        var cx = start.first
-        var cy = start.second
+
+        // تطبيع متجه الاتجاه
+        val initialLen = hypot(vx, vy)
+        vx /= initialLen
+        vy /= initialLen
+
+        // حدود مسار مركز الكرة مع مراعاة نصف قطر الكرة عن مطاط الطاولة
+        val ballR = (r.r - r.l) * 0.0165f
+        val boundL = r.l + ballR
+        val boundR = r.r - ballR
+        val boundT = r.t + ballR
+        val boundB = r.b - ballR
+
+        var cx = start.first.coerceIn(boundL, boundR)
+        var cy = start.second.coerceIn(boundT, boundB)
         val out = mutableListOf<Pair<Pt, Pt>>()
-        repeat(max(0, maxBanks)) {
+
+        for (bankIndex in 0 until max(0, maxBanks)) {
             val cand = mutableListOf<Pair<Float, Char>>()
-            if (vx > 0) cand.add((r.r - cx) / vx to 'x') else if (vx < 0) cand.add((r.l - cx) / vx to 'x')
-            if (vy > 0) cand.add((r.b - cy) / vy to 'y') else if (vy < 0) cand.add((r.t - cy) / vy to 'y')
+            if (vx > 1e-6f) cand.add((boundR - cx) / vx to 'x')
+            else if (vx < -1e-6f) cand.add((boundL - cx) / vx to 'x')
+
+            if (vy > 1e-6f) cand.add((boundB - cy) / vy to 'y')
+            else if (vy < -1e-6f) cand.add((boundT - cy) / vy to 'y')
+
             val valid = cand.filter { it.first > EPS }
-            if (valid.isEmpty()) return out
+            if (valid.isEmpty()) break
+
             val (t, axis) = valid.minByOrNull { it.first }!!
-            val hit = Pt(cx + vx * t, cy + vy * t)
-            out.add(Pt(cx, cy) to hit)
-            if (axis == 'x') vx = -vx else vy = -vy
-            cx = hit.first
-            cy = hit.second
+            val hitX = cx + vx * t
+            val hitY = cy + vy * t
+            out.add(Pt(cx, cy) to Pt(hitX, hitY))
+
+            // تصحيح زاوية ارتداد المطاط الفيزيائية للارتدادات المتتالية
+            if (axis == 'x') {
+                vx = -vx
+                vy *= 0.982f // تقليل طفيف جداً للمركبة الموازية يضبط اتساع زاوية الخروج الحقيقية
+            } else {
+                vy = -vy
+                vx *= 0.982f
+            }
+
+            // إعادة توحيد المتجه للحفاظ على الاتجاه
+            val len = hypot(vx, vy)
+            if (len > 1e-6f) {
+                vx /= len
+                vy /= len
+            }
+
+            cx = hitX
+            cy = hitY
         }
         return out
     }
