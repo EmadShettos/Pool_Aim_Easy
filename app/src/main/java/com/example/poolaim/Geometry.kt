@@ -34,10 +34,10 @@ object Geometry {
     fun clamp(p: Pt, r: Box) = Pt(min(max(p.first, r.l), r.r), min(max(p.second, r.t), r.b))
 
     /**
-     * حساب ارتدادات الجدار بدقة فيزيائية متطابقة:
-     * - الحفاظ على معادلة الكود الناجح الأساسية (0.982f) للضربات الطولية والعرضية العادية.
-     * - تصحيح ارتداد الزاوية الركنية عند فم الجيب لمنع الانكسار الحاد للأسفل،
-     *   وجعل الخط يمتد بقطر طويل ومستقيم إلى الجيب المقابل.
+     * حساب ارتدادات الجدار بدقة فيزيائية كاملة:
+     * 1. الحفاظ على معادلة الكود الأصلي الناجح (0.982f) للضربات الطولية والعرضية العادية.
+     * 2. تصحيح اندفاع الكرة القطري (Running Spin Throw) عند الارتداد المزدوج السريع
+     *    حول فم الجيب الركني ليطابق مسار الكرة الحقيقي نحو الجيب المقابل تماماً.
      */
     fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4): List<Pair<Pt, Pt>> {
         var vx = dir.first
@@ -50,13 +50,14 @@ object Geometry {
 
         val tableW = r.r - r.l
         val ballR = tableW * 0.0165f
+
         val boundL = r.l + ballR
         val boundR = r.r - ballR
         val boundT = r.t + ballR
         val boundB = r.b - ballR
 
-        // نطاق فم الجيب عند الأركان
-        val cornerJawRange = tableW * 0.09f
+        // مدى منطقة فم الجيب الركني
+        val cornerJawThreshold = tableW * 0.11f
 
         var cx = start.first.coerceIn(boundL, boundR)
         var cy = start.second.coerceIn(boundT, boundB)
@@ -82,28 +83,28 @@ object Geometry {
             val hitY = cy + vy * t
             out.add(Pt(cx, cy) to Pt(hitX, hitY))
 
-            // فحص هل الارتطام الحالي وقع في ركن الجيب بعد ارتداد مباشر من الحافة المجاورة
-            val isNearCornerX = (abs(hitX - boundL) < cornerJawRange) || (abs(hitX - boundR) < cornerJawRange)
-            val isNearCornerY = (abs(hitY - boundT) < cornerJawRange) || (abs(hitY - boundB) < cornerJawRange)
-            val isCornerZone = isNearCornerX && isNearCornerY
+            // فحص هل هذا الارتداد هو الارتداد الثاني المباشر في نفس زاوية الركن
+            val isNearCornerX = (abs(hitX - boundL) < cornerJawThreshold) || (abs(hitX - boundR) < cornerJawThreshold)
+            val isNearCornerY = (abs(hitY - boundT) < cornerJawThreshold) || (abs(hitY - boundB) < cornerJawThreshold)
+            val inCornerMouth = isNearCornerX && isNearCornerY
             val segDist = hypot(hitX - lastHitX, hitY - lastHitY)
-            val isCornerDoubleRebound = isCornerZone && (lastAxis != ' ' && lastAxis != axis) && (segDist < tableW * 0.35f)
+            val isCornerKickRebound = inCornerMouth && (lastAxis != ' ' && lastAxis != axis) && (segDist < tableW * 0.32f)
 
             if (axis == 'x') {
                 vx = -vx
-                if (isCornerDoubleRebound) {
-                    // جعل زاوية الارتداد ممتدة أفقياً وليس حادة لأسفل
-                    vx *= 1.08f
-                    vy *= 0.88f
+                if (isCornerKickRebound) {
+                    // تأثير دوران الجري الطبيعي عند الارتداد الركني الثاني
+                    vy *= 1.042f
+                    vx *= 0.965f
                 } else {
                     vy *= 0.982f
                 }
             } else {
                 vy = -vy
-                if (isCornerDoubleRebound) {
-                    // تصحيح الارتداد عن الحافة الطويلة بجوار الجيب ليمتد عبر الطاولة نحو الجيب المقابل
-                    vx *= 1.12f
-                    vy *= 0.86f
+                if (isCornerKickRebound) {
+                    // انطلاق الكرة قطرياً عبر الطاولة نحو الجيب المقابل
+                    vx *= 1.042f
+                    vy *= 0.965f
                 } else {
                     vx *= 0.982f
                 }
