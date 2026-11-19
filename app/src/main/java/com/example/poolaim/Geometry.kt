@@ -34,10 +34,10 @@ object Geometry {
     fun clamp(p: Pt, r: Box) = Pt(min(max(p.first, r.l), r.r), min(max(p.second, r.t), r.b))
 
     /**
-     * حساب الارتدادات المتتابعة بدقة فيزيائية متطابقة مع محاكي اللعبة:
-     * - مراعاة ارتداد محيط الكرة الفعلي (وليس المركز فقط).
-     * - تصحيح الارتداد الزاوي الحاد عند فم الجيب (Pocket Jaw Squeeze)
-     *   بحيث تعبر الكرة قطرياً إلى الجيب المقابل بدقة تامة.
+     * حساب ارتدادات الجدار بدقة فيزيائية متطابقة:
+     * - الحفاظ على معادلة الكود الناجح الأساسية (0.982f) للضربات الطولية والعرضية العادية.
+     * - تصحيح ارتداد الزاوية الركنية عند فم الجيب لمنع الانكسار الحاد للأسفل،
+     *   وجعل الخط يمتد بقطر طويل ومستقيم إلى الجيب المقابل.
      */
     fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4): List<Pair<Pt, Pt>> {
         var vx = dir.first
@@ -50,22 +50,21 @@ object Geometry {
 
         val tableW = r.r - r.l
         val ballR = tableW * 0.0165f
-
         val boundL = r.l + ballR
         val boundR = r.r - ballR
         val boundT = r.t + ballR
         val boundB = r.b - ballR
 
-        // مدى شطفة فم جيب الركن
-        val cornerJawThreshold = tableW * 0.075f
+        // نطاق فم الجيب عند الأركان
+        val cornerJawRange = tableW * 0.09f
 
         var cx = start.first.coerceIn(boundL, boundR)
         var cy = start.second.coerceIn(boundT, boundB)
         val out = mutableListOf<Pair<Pt, Pt>>()
 
+        var lastAxis = ' '
         var lastHitX = cx
         var lastHitY = cy
-        var lastAxis = ' '
 
         for (bankIndex in 0 until max(0, maxBanks)) {
             val cand = mutableListOf<Pair<Float, Char>>()
@@ -83,35 +82,30 @@ object Geometry {
             val hitY = cy + vy * t
             out.add(Pt(cx, cy) to Pt(hitX, hitY))
 
-            // المسافة بين هذا الارتطام والارتطام السابق
-            val segmentDist = hypot(hitX - lastHitX, hitY - lastHitY)
-
-            // هل الارتطام الحالي يقع في منطقة فم جيب أحد الأركان؟
-            val nearCornerX = (abs(hitX - boundL) < cornerJawThreshold) || (abs(hitX - boundR) < cornerJawThreshold)
-            val nearCornerY = (abs(hitY - boundT) < cornerJawThreshold) || (abs(hitY - boundB) < cornerJawThreshold)
-            val inCornerMouth = nearCornerX && nearCornerY
-
-            // ارتداد ركني سريع (حافة قصيرة ثم طويلة أو العكس في مسافة ضيقة عند الجيب)
-            val isCornerJawRebound = inCornerMouth && (lastAxis != ' ' && lastAxis != axis) && (segmentDist < tableW * 0.28f)
+            // فحص هل الارتطام الحالي وقع في ركن الجيب بعد ارتداد مباشر من الحافة المجاورة
+            val isNearCornerX = (abs(hitX - boundL) < cornerJawRange) || (abs(hitX - boundR) < cornerJawRange)
+            val isNearCornerY = (abs(hitY - boundT) < cornerJawRange) || (abs(hitY - boundB) < cornerJawRange)
+            val isCornerZone = isNearCornerX && isNearCornerY
+            val segDist = hypot(hitX - lastHitX, hitY - lastHitY)
+            val isCornerDoubleRebound = isCornerZone && (lastAxis != ' ' && lastAxis != axis) && (segDist < tableW * 0.35f)
 
             if (axis == 'x') {
                 vx = -vx
-                if (isCornerJawRebound) {
-                    // تصحيح زاوية الانعكاس القطري بعد الاصطدام بفم الجيب مباشرة
-                    val angleAdjust = 1.075f
-                    vy = (vy * angleAdjust).coerceIn(-1.8f, 1.8f)
-                    vx *= 0.93f
+                if (isCornerDoubleRebound) {
+                    // جعل زاوية الارتداد ممتدة أفقياً وليس حادة لأسفل
+                    vx *= 1.08f
+                    vy *= 0.88f
                 } else {
-                    vy *= 0.985f
+                    vy *= 0.982f
                 }
             } else {
                 vy = -vy
-                if (isCornerJawRebound) {
-                    val angleAdjust = 1.075f
-                    vx = (vx * angleAdjust).coerceIn(-1.8f, 1.8f)
-                    vy *= 0.93f
+                if (isCornerDoubleRebound) {
+                    // تصحيح الارتداد عن الحافة الطويلة بجوار الجيب ليمتد عبر الطاولة نحو الجيب المقابل
+                    vx *= 1.12f
+                    vy *= 0.86f
                 } else {
-                    vx *= 0.985f
+                    vx *= 0.982f
                 }
             }
 
