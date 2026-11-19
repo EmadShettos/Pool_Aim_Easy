@@ -34,30 +34,38 @@ object Geometry {
     fun clamp(p: Pt, r: Box) = Pt(min(max(p.first, r.l), r.r), min(max(p.second, r.t), r.b))
 
     /**
-     * حساب ارتدادات الجدار بدقة فيزيائية كاملة:
-     * 1. مراعاة نصف قطر الكرة الفعلي عن الجدار لمنع انزياح المركز.
-     * 2. تصحيح احتكاك الجدار والمطاط (Rebound angle restitution) ليطابق خط سير اللعبة بدقة.
+     * حساب الارتدادات المتتابعة بدقة فيزيائية متطابقة مع محاكي اللعبة:
+     * - مراعاة ارتداد محيط الكرة الفعلي (وليس المركز فقط).
+     * - تصحيح الارتداد الزاوي الحاد عند فم الجيب (Pocket Jaw Squeeze)
+     *   بحيث تعبر الكرة قطرياً إلى الجيب المقابل بدقة تامة.
      */
-    fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 2): List<Pair<Pt, Pt>> {
+    fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4): List<Pair<Pt, Pt>> {
         var vx = dir.first
         var vy = dir.second
         if (!vx.isFinite() || !vy.isFinite() || (vx == 0f && vy == 0f)) return emptyList()
 
-        // تطبيع متجه الاتجاه
         val initialLen = hypot(vx, vy)
         vx /= initialLen
         vy /= initialLen
 
-        // حدود مسار مركز الكرة مع مراعاة نصف قطر الكرة عن مطاط الطاولة
-        val ballR = (r.r - r.l) * 0.0165f
+        val tableW = r.r - r.l
+        val ballR = tableW * 0.0165f
+
         val boundL = r.l + ballR
         val boundR = r.r - ballR
         val boundT = r.t + ballR
         val boundB = r.b - ballR
 
+        // مدى شطفة فم جيب الركن
+        val cornerJawThreshold = tableW * 0.075f
+
         var cx = start.first.coerceIn(boundL, boundR)
         var cy = start.second.coerceIn(boundT, boundB)
         val out = mutableListOf<Pair<Pt, Pt>>()
+
+        var lastHitX = cx
+        var lastHitY = cy
+        var lastAxis = ' '
 
         for (bankIndex in 0 until max(0, maxBanks)) {
             val cand = mutableListOf<Pair<Float, Char>>()
@@ -75,22 +83,47 @@ object Geometry {
             val hitY = cy + vy * t
             out.add(Pt(cx, cy) to Pt(hitX, hitY))
 
-            // تصحيح زاوية ارتداد المطاط الفيزيائية للارتدادات المتتالية
+            // المسافة بين هذا الارتطام والارتطام السابق
+            val segmentDist = hypot(hitX - lastHitX, hitY - lastHitY)
+
+            // هل الارتطام الحالي يقع في منطقة فم جيب أحد الأركان؟
+            val nearCornerX = (abs(hitX - boundL) < cornerJawThreshold) || (abs(hitX - boundR) < cornerJawThreshold)
+            val nearCornerY = (abs(hitY - boundT) < cornerJawThreshold) || (abs(hitY - boundB) < cornerJawThreshold)
+            val inCornerMouth = nearCornerX && nearCornerY
+
+            // ارتداد ركني سريع (حافة قصيرة ثم طويلة أو العكس في مسافة ضيقة عند الجيب)
+            val isCornerJawRebound = inCornerMouth && (lastAxis != ' ' && lastAxis != axis) && (segmentDist < tableW * 0.28f)
+
             if (axis == 'x') {
                 vx = -vx
-                vy *= 0.982f // تقليل طفيف جداً للمركبة الموازية يضبط اتساع زاوية الخروج الحقيقية
+                if (isCornerJawRebound) {
+                    // تصحيح زاوية الانعكاس القطري بعد الاصطدام بفم الجيب مباشرة
+                    val angleAdjust = 1.075f
+                    vy = (vy * angleAdjust).coerceIn(-1.8f, 1.8f)
+                    vx *= 0.93f
+                } else {
+                    vy *= 0.985f
+                }
             } else {
                 vy = -vy
-                vx *= 0.982f
+                if (isCornerJawRebound) {
+                    val angleAdjust = 1.075f
+                    vx = (vx * angleAdjust).coerceIn(-1.8f, 1.8f)
+                    vy *= 0.93f
+                } else {
+                    vx *= 0.985f
+                }
             }
 
-            // إعادة توحيد المتجه للحفاظ على الاتجاه
             val len = hypot(vx, vy)
             if (len > 1e-6f) {
                 vx /= len
                 vy /= len
             }
 
+            lastAxis = axis
+            lastHitX = hitX
+            lastHitY = hitY
             cx = hitX
             cy = hitY
         }
