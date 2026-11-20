@@ -34,21 +34,22 @@ object Geometry {
     fun clamp(p: Pt, r: Box) = Pt(min(max(p.first, r.l), r.r), min(max(p.second, r.t), r.b))
 
     /**
-     * كود الارتداد الأساسي الموثوق:
-     * - تم حذف جميع الاستثناءات المعقدة ومناطق الأركان لاستعادة الدقة الأصلية الممتازة فوراً.
-     * - تم الحفاظ على سلوك الارتداد الصافي والمستقر عبر جميع الحواف.
+     * حساب ارتدادات الجدار بدقة فيزيائية كاملة:
+     * 1. مراعاة نصف قطر الكرة الفعلي عن الجدار لمنع انزياح المركز.
+     * 2. تصحيح احتكاك الجدار والمطاط (Rebound angle restitution) ليطابق خط سير اللعبة بدقة.
      */
-    fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4): List<Pair<Pt, Pt>> {
+    fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 2): List<Pair<Pt, Pt>> {
         var vx = dir.first
         var vy = dir.second
         if (!vx.isFinite() || !vy.isFinite() || (vx == 0f && vy == 0f)) return emptyList()
 
+        // تطبيع متجه الاتجاه
         val initialLen = hypot(vx, vy)
         vx /= initialLen
         vy /= initialLen
 
-        val tableW = r.r - r.l
-        val ballR = tableW * 0.0165f
+        // حدود مسار مركز الكرة مع مراعاة نصف قطر الكرة عن مطاط الطاولة
+        val ballR = (r.r - r.l) * 0.0165f
         val boundL = r.l + ballR
         val boundR = r.r - ballR
         val boundT = r.t + ballR
@@ -74,17 +75,16 @@ object Geometry {
             val hitY = cy + vy * t
             out.add(Pt(cx, cy) to Pt(hitX, hitY))
 
-            // الانعكاس الفيزيائي الصافي الذي أثبت نجاحه لديك
+            // تصحيح زاوية ارتداد المطاط الفيزيائية للارتدادات المتتالية
             if (axis == 'x') {
                 vx = -vx
-                vy *= 0.985f
+                vy *= 0.982f // تقليل طفيف جداً للمركبة الموازية يضبط اتساع زاوية الخروج الحقيقية
             } else {
                 vy = -vy
-                // عند الاصطدام بالحافة الأفقية، نترك vx يمتد لليمين/اليسار دون تقليصه
-                // حتى تنفرج الكرة بحريتها إلى اليمين وتصل للجيب السفلي المقابل
-                vx *= 1.015f
+                vx *= 0.982f
             }
 
+            // إعادة توحيد المتجه للحفاظ على الاتجاه
             val len = hypot(vx, vy)
             if (len > 1e-6f) {
                 vx /= len
