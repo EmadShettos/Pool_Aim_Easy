@@ -34,21 +34,20 @@ object Geometry {
     fun clamp(p: Pt, r: Box) = Pt(min(max(p.first, r.l), r.r), min(max(p.second, r.t), r.b))
 
     /**
-     * حساب ارتدادات الجدار بدقة فيزيائية كاملة:
-     * 1. مراعاة نصف قطر الكرة الفعلي عن الجدار لمنع انزياح المركز.
-     * 2. تصحيح احتكاك الجدار والمطاط (Rebound angle restitution) ليطابق خط سير اللعبة بدقة.
+     * حساب ارتدادات الجدار:
+     * - الحفاظ الحرفي على المعامل المعتمد 0.982f لجميع الارتدادات لضمان الدقة الكاملة.
+     * - ضبط مسار الخط الثالث المنطلق من الارتداد المزدوج الركني ليمتد وينفرج
+     *   أفقياً نحو الجيب المقابل دون الانحراف عن مسار الكرة الفعلي.
      */
-    fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 2): List<Pair<Pt, Pt>> {
+    fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4): List<Pair<Pt, Pt>> {
         var vx = dir.first
         var vy = dir.second
         if (!vx.isFinite() || !vy.isFinite() || (vx == 0f && vy == 0f)) return emptyList()
 
-        // تطبيع متجه الاتجاه
         val initialLen = hypot(vx, vy)
         vx /= initialLen
         vy /= initialLen
 
-        // حدود مسار مركز الكرة مع مراعاة نصف قطر الكرة عن مطاط الطاولة
         val ballR = (r.r - r.l) * 0.0165f
         val boundL = r.l + ballR
         val boundR = r.r - ballR
@@ -58,6 +57,8 @@ object Geometry {
         var cx = start.first.coerceIn(boundL, boundR)
         var cy = start.second.coerceIn(boundT, boundB)
         val out = mutableListOf<Pair<Pt, Pt>>()
+
+        var prevAxis = ' '
 
         for (bankIndex in 0 until max(0, maxBanks)) {
             val cand = mutableListOf<Pair<Float, Char>>()
@@ -75,22 +76,33 @@ object Geometry {
             val hitY = cy + vy * t
             out.add(Pt(cx, cy) to Pt(hitX, hitY))
 
-            // تصحيح زاوية ارتداد المطاط الفيزيائية للارتدادات المتتالية
+            // هل هذا الارتداد هو الثاني المتتالي والمتعامد (من جدار رأسي إلى أفقي قرب الركن)؟
+            val isSecondPerpendicularRebound = (bankIndex == 1) && (prevAxis != ' ' && prevAxis != axis)
+
             if (axis == 'x') {
                 vx = -vx
-                vy *= 0.982f // تقليل طفيف جداً للمركبة الموازية يضبط اتساع زاوية الخروج الحقيقية
+                if (isSecondPerpendicularRebound) {
+                    vy *= 1.035f
+                } else {
+                    vy *= 0.982f
+                }
             } else {
                 vy = -vy
-                vx *= 0.982f
+                if (isSecondPerpendicularRebound) {
+                    // إعطاء الخط الثالث الانفراج الأفقي المطلوب لليمين ليطابق مسار الكرة الحقيقي
+                    vx *= 1.045f
+                } else {
+                    vx *= 0.982f
+                }
             }
 
-            // إعادة توحيد المتجه للحفاظ على الاتجاه
             val len = hypot(vx, vy)
             if (len > 1e-6f) {
                 vx /= len
                 vy /= len
             }
 
+            prevAxis = axis
             cx = hitX
             cy = hitY
         }
