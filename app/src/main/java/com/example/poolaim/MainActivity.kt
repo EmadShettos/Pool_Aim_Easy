@@ -23,6 +23,10 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import org.json.JSONArray
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlin.concurrent.thread
 import kotlin.math.max
 import kotlin.math.min
 
@@ -98,6 +102,12 @@ class MainActivity : Activity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun T(k: String) = Lang.t(this, k)
 
+    // متغيرات التحديث الإلزامي
+    private var isUpdateRequired = false
+    private var latestDownloadUrl = "https://github.com/EmadShettos/Pool_Aim_Easy/actions"
+    private val REPO = "EmadShettos/Pool_Aim_Easy"
+    private val PREF_LAST_SHA = "last_installed_sha"
+
     private fun styled(label: String, bg: Int, fg: Int, onClick: () -> Unit): Button =
         Button(this).apply {
             text = label
@@ -126,6 +136,43 @@ class MainActivity : Activity() {
             if (bold) typeface = Typeface.DEFAULT_BOLD
             if (center) gravity = Gravity.CENTER
         }
+
+    private fun checkForUpdates() {
+        thread {
+            try {
+                val url = URL("https://api.github.com/repos/$REPO/commits?per_page=1")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    setRequestProperty("User-Agent", "PoolAimApp")
+                    connectTimeout = 4000
+                    readTimeout = 4000
+                }
+                if (conn.responseCode == 200) {
+                    val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONArray(resp)
+                    if (json.length() > 0) {
+                        val latestSha = json.getJSONObject(0).getString("sha")
+                        val prefs = getSharedPreferences(Lang.PREFS, MODE_PRIVATE)
+                        val installedSha = prefs.getString(PREF_LAST_SHA, null)
+
+                        if (installedSha == null) {
+                            // التثبيت الأول يحفظ الـ SHA الحالي
+                            prefs.edit().putString(PREF_LAST_SHA, latestSha).apply()
+                        } else if (installedSha != latestSha) {
+                            // يوجد كود جديد في المستودع ويجب التحديث إجبارياً
+                            runOnUiThread {
+                                isUpdateRequired = true
+                                val y = scroll?.scrollY ?: 0
+                                build(y)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // في حالة انقطاع الإنترنت يستمر التطبيق بسلاسة
+            }
+        }
+    }
 
     private fun helpCard(onTop: () -> Unit): LinearLayout {
         val card = LinearLayout(this).apply {
@@ -215,18 +262,75 @@ class MainActivity : Activity() {
 
         val card = helpCard { sv.smoothScrollTo(0, 0) }
 
+        // كرت التحديث الإلزامي إذا وُجد تحديث جديد
+        if (isUpdateRequired) {
+            val updateBox = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(14), dp(14), dp(14), dp(14))
+                background = GradientDrawable().apply {
+                    setColor(0xFF1E293B.toInt())
+                    cornerRadius = dp(14).toFloat()
+                    setStroke(dp(2), 0xFF38BDF8.toInt())
+                }
+            }
+            updateBox.addView(label(
+                if (isAr) "⚠️ يتوفر إصدار جديد للتطبيق!" else "⚠️ New version available!",
+                16f, 0xFF38BDF8.toInt(), true, true
+            ))
+            updateBox.addView(label(
+                if (isAr) "يجب تحديث التطبيق أولاً لتشغيل العرض والاستمتاع بآخر التعديلات"
+                else "You must update the app to start overlay and get latest features",
+                12f, Color.WHITE, false, true
+            ), LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(6)
+            })
+
+            val updateNowBtn = styled(
+                if (isAr) "تنزيل التحديث وتثبيته الآن 🚀" else "Download & Update Now 🚀",
+                0xFF10B981.toInt(), Color.WHITE
+            ) {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(latestDownloadUrl)))
+            }
+            updateBox.addView(updateNowBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(10)
+            })
+
+            root.addView(updateBox, lp())
+        }
+
         root.addView(styled(T("grant"), 0xFF14532D.toInt(), Color.WHITE) {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }, lp())
-        root.addView(styled(T("start"), gold, Color.BLACK) {
+
+        // زر تشغيل العرض: مقفل تماماً إذا كان هناك تحديث إلزامي
+        val startBtnLabel = if (isUpdateRequired) {
+            if (isAr) "🔒 قفل التشغيل (يجب التحديث أولاً)" else "🔒 Locked (Update required)"
+        } else T("start")
+
+        val startBtnBg = if (isUpdateRequired) 0xFF4B5563.toInt() else gold
+        val startBtnFg = if (isUpdateRequired) Color.LTGRAY else Color.BLACK
+
+        root.addView(styled(startBtnLabel, startBtnBg, startBtnFg) {
+            if (isUpdateRequired) {
+                Toast.makeText(
+                    this,
+                    if (isAr) "يوجد إصدار أحدث، يرجى الضغط على زر التحديث أعلاه!"
+                    else "A new update is available. Please update above to continue!",
+                    Toast.LENGTH_LONG
+                ).show()
+                return@styled
+            }
             if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 1)
             if (!Settings.canDrawOverlays(this)) {
                 Toast.makeText(this, T("grant_first"), Toast.LENGTH_LONG).show()
             } else startForegroundService(Intent(this, OverlayService::class.java))
         }, lp())
+
         root.addView(styled(T("stop_overlay"), 0xFF7F1D1D.toInt(), Color.WHITE) {
             stopService(Intent(this, OverlayService::class.java))
         }, lp())
+
         root.addView(styled(T("how_to_play"), 0xFF0B0B0B.toInt(), gold) {
             sv.post { sv.smoothScrollTo(0, card.top) }
         }, lp())
@@ -268,6 +372,12 @@ class MainActivity : Activity() {
         super.onCreate(s)
         val y = getSharedPreferences(Lang.PREFS, MODE_PRIVATE).getInt("main_scroll", 0)
         build(y)
+        checkForUpdates()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkForUpdates()
     }
 
     override fun onPause() {
