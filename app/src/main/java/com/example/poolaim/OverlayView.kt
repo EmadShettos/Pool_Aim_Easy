@@ -19,19 +19,19 @@ class OverlayView(ctx: Context) : View(ctx) {
     val marker = PointF()
     val flags = linkedMapOf(
         "lines" to true, "single" to false, "bank" to false, "double_bank" to true,
-        "ghost" to true, "hud" to true, "animate" to false, "snap" to false, "glow" to false
+        "ghost" to true, "hud" to true, "animate" to false, "snap" to false, "glow" to true
     )
     var thickness = 3f
     var themeIdx = 0
-    var cueForce = 1 // القوة الافتراضية لعصا المبتدئين
+    var cueForce = 1
     var locked = false
     var rectHidden = false
     var aimHidden = false
     var hideAll = false
     var ghostDistStep = 6
     var ghostSizeStep = 9
-    var glowStep = 5
-    var glowSizeStep = 0
+    var glowStep = 5      // الشفافية في منتصف المسطرة افتراضياً
+    var glowSizeStep = 5  // حجم الهالة في منتصف المسطرة افتراضياً
     var onChanged: (() -> Unit)? = null
     private var loaded = false
 
@@ -54,16 +54,14 @@ class OverlayView(ctx: Context) : View(ctx) {
     private val ghostDistPx get() = ghostDistStep * 3f * d
     private fun pulse() = 0.5f
 
-    // ضبط المستطيل بذكاء: وضع اللعبة الأفقي (Landscape) أو وضع المتصفح الرأسي (Portrait)
+    // ضبط المستطيل الدقيق: Landscape يطابق طاولة اللعبة تماماً و Portrait يطابق المتصفح
     fun resetLayout() {
         val w = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
         val h = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
 
         if (w > h) {
-            // وضع اللعبة الأفقي الكامل (8 Ball Pool Landscape)
             rect.set(w * 0.198f, h * 0.241f, w * 0.800f, h * 0.907f)
         } else {
-            // وضع الشاشة الرأسي قبل فتح اللعبة (وضع المتصفح نسبة 2:1)
             val tw = w * 0.92f
             val th = tw / 2.0f
             val l = (w - tw) / 2f
@@ -78,19 +76,25 @@ class OverlayView(ctx: Context) : View(ctx) {
         onChanged?.invoke()
     }
 
-    // تدوير كامل للمستطيل والجيوب والنقاط 180 درجة
+    // تدوير المستطيل والكرات: في الوضع الأفقي يبقى المستطيل متطابقاً مع الطاولة والكرات تدور 180°
     fun rotateTable() {
         val w = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
         val h = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
 
-        val nl = w - rect.right
-        val nr = w - rect.left
-        val nt = h - rect.bottom
-        val nb = h - rect.top
-        rect.set(nl, nt, nr, nb)
+        if (w > h) {
+            rect.set(w * 0.198f, h * 0.241f, w * 0.800f, h * 0.907f)
+        } else {
+            val nl = w - rect.right
+            val nr = w - rect.left
+            val nt = h - rect.bottom
+            val nb = h - rect.top
+            rect.set(nl, nt, nr, nb)
+        }
 
+        val cx = rect.centerX()
+        val cy = rect.centerY()
         fun rot(p: PointF) {
-            p.set(w - p.x, h - p.y)
+            p.set(2 * cx - p.x, 2 * cy - p.y)
         }
         rot(p1)
         rot(p2)
@@ -102,7 +106,6 @@ class OverlayView(ctx: Context) : View(ctx) {
     }
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
-        // عند حدوث التدوير التلقائي للشاشة عند فتح أو إغلاق اللعبة
         val orientationChanged = (ow > 0 && oh > 0) && ((ow > oh) != (w > h))
         if (!loaded || orientationChanged) {
             resetLayout()
@@ -155,17 +158,17 @@ class OverlayView(ctx: Context) : View(ctx) {
         }
     }
 
-    // ---------- drawing ----------
+    // ---------- رسم الهالة الأنيقة المطابقة للفيديو ----------
     private fun glowAlpha(base: Int) = (base * glowStep / 5f).toInt().coerceIn(0, 255)
 
     private fun glowLine(c: Canvas, ax: Float, ay: Float, bx: Float, by: Float, rgb: Int, outerA: Int, innerA: Int) {
         if (flags["glow"] != true || glowStep <= 0) return
-        val k = 1f + glowSizeStep / 10f
+        val k = 1f + (glowSizeStep - 5) * 0.15f
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = pocketR * k
+        paint.strokeWidth = pocketR * 1.3f * k
         paint.color = (rgb and 0x00FFFFFF) or (glowAlpha(outerA) shl 24)
         c.drawLine(ax, ay, bx, by, paint)
-        paint.strokeWidth = pocketR * 0.6f * k
+        paint.strokeWidth = pocketR * 0.75f * k
         paint.color = (rgb and 0x00FFFFFF) or (glowAlpha(innerA) shl 24)
         c.drawLine(ax, ay, bx, by, paint)
     }
@@ -368,7 +371,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         ghostDistStep = prefs.getInt("gdist", 6).coerceIn(0, 10)
         ghostSizeStep = prefs.getInt("gsize", 9).coerceIn(0, 9)
         glowStep = prefs.getInt("glow_step", 5).coerceIn(0, 10)
-        glowSizeStep = prefs.getInt("glow_size", 0).coerceIn(0, 10)
+        glowSizeStep = prefs.getInt("glow_size", 5).coerceIn(0, 10)
         locked = prefs.getBoolean("locked", false)
         rectHidden = prefs.getBoolean("rect_hidden", false)
         aimHidden = prefs.getBoolean("aim_hidden", false)
@@ -377,6 +380,8 @@ class OverlayView(ctx: Context) : View(ctx) {
         themeIdx = prefs.getInt("theme", 0).coerceIn(0, THEMES.size - 1)
         cueForce = prefs.getInt("cue_force", 1).coerceIn(1, 10)
         for (k in flags.keys.toList()) flags[k] = prefs.getBoolean("f_$k", flags[k]!!)
+        flags["glow"] = prefs.getBoolean("f_glow", true)
+
         if (!prefs.contains("l")) return
         val l = prefs.getFloat("l", 0f); val t = prefs.getFloat("t", 0f)
         val r = prefs.getFloat("r", 0f); val b = prefs.getFloat("b", 0f)
