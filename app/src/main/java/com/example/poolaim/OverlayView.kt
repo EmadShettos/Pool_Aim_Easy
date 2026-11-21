@@ -18,12 +18,12 @@ class OverlayView(ctx: Context) : View(ctx) {
     val p2 = PointF()
     val marker = PointF()
     val flags = linkedMapOf(
-        "lines" to true, "single" to true, "bank" to true, "double_bank" to true,
+        "lines" to true, "single" to false, "bank" to false, "double_bank" to true,
         "ghost" to true, "hud" to true, "animate" to false, "snap" to false, "glow" to false
     )
     var thickness = 3f
     var themeIdx = 0
-    var cueForce = 5 // قوة العصا من 1 إلى 10
+    var cueForce = 1 // القوة الافتراضية 1 (عصا المبتدئين)
     var locked = false
     var rectHidden = false
     var aimHidden = false
@@ -54,13 +54,29 @@ class OverlayView(ctx: Context) : View(ctx) {
     private val ghostDistPx get() = ghostDistStep * 3f * d
     private fun pulse() = 0.5f
 
+    // أبعاد الطاولة الافتراضية الدقيقة المطابقة للعبة 8 Ball Pool
     fun resetLayout() {
         val w = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
         val h = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
-        rect.set(w * 0.08f, h * 0.22f, w * 0.92f, h * 0.78f)
+        rect.set(w * 0.198f, h * 0.241f, w * 0.800f, h * 0.907f)
         p1.set(rect.left + rect.width() * 0.25f, rect.centerY())
         p2.set(rect.right - rect.width() * 0.25f, rect.centerY())
         marker.set(rect.centerX(), rect.centerY())
+        invalidate()
+        onChanged?.invoke()
+    }
+
+    // تدوير المستطيل ونقاط التحكم 180 درجة داخل الطاولة
+    fun rotateTable() {
+        val cx = (rect.left + rect.right) / 2f
+        val cy = (rect.top + rect.bottom) / 2f
+        fun rot(p: PointF) {
+            p.set(2 * cx - p.x, 2 * cy - p.y)
+        }
+        rot(p1)
+        rot(p2)
+        rot(marker)
+        save()
         invalidate()
         onChanged?.invoke()
     }
@@ -194,7 +210,6 @@ class OverlayView(ctx: Context) : View(ctx) {
             glowLine(c, p1.x, p1.y, p2.x, p2.y, Color.WHITE, 60, 110)
             line(c, p1.x, p1.y, p2.x, p2.y, bw, Color.BLACK)
 
-            // تمرير قوة العصا cueForce إلى المحرك الفيزيائي
             val m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks, cueForce)
             segs = m
             for ((i, s) in m.withIndex()) {
@@ -207,10 +222,12 @@ class OverlayView(ctx: Context) : View(ctx) {
             }
         }
 
+        // إظهار الكرة الشبحية بمجرد تفعيل المربع الخاص بها دون اشتراط C-8 Line
         var info: Triple<Int, Float, Float>? = null
-        if (!aimHidden && flags["ghost"] == true) info = drawGhost(c, b)
+        if (flags["ghost"] == true) info = drawGhost(c, b)
 
-        if (!aimHidden) {
+        // إظهار دوائر اللمس C و 8 إذا كان C-8 line مفعلاً أو Ghost Ball مفعلاً
+        if (!aimHidden || flags["ghost"] == true) {
             for ((p, label) in listOf(p1 to "C", p2 to "8")) {
                 val qx = p.x + touchOffX
                 touchCircle(c, qx, p.y, pocketR)
@@ -328,7 +345,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         hideAll = prefs.getBoolean("hide_all", false)
         thickness = prefs.getFloat("thick", 3f).coerceIn(1f, 10f)
         themeIdx = prefs.getInt("theme", 0).coerceIn(0, THEMES.size - 1)
-        cueForce = prefs.getInt("cue_force", 5).coerceIn(1, 10)
+        cueForce = prefs.getInt("cue_force", 1).coerceIn(1, 10)
         for (k in flags.keys.toList()) flags[k] = prefs.getBoolean("f_$k", flags[k]!!)
         if (!prefs.contains("l")) return
         val l = prefs.getFloat("l", 0f); val t = prefs.getFloat("t", 0f)
