@@ -3,7 +3,6 @@ package com.example.poolaim
 import kotlin.math.*
 
 typealias Pt = Pair<Float, Float>
-
 data class Box(val l: Float, val t: Float, val r: Float, val b: Float)
 
 val THEMES: List<Pair<String, Int>> = listOf(
@@ -33,11 +32,6 @@ object Geometry {
 
     fun clamp(p: Pt, r: Box) = Pt(min(max(p.first, r.l), r.r), min(max(p.second, r.t), r.b))
 
-    /**
-     * حساب ارتدادات الجدار:
-     * - الحفاظ الحرفي على معادلتك الأصلية المعتمدة (0.982f) لاستعادة الدقة المرجعية التامة.
-     * - دقة تامة للارتدادات العمودية النظيفة مع توافق لقوة العصا.
-     */
     fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4, cueForce: Int = 1): List<Pair<Pt, Pt>> {
         var vx = dir.first
         var vy = dir.second
@@ -57,7 +51,9 @@ object Geometry {
         var cy = start.second.coerceIn(boundT, boundB)
         val out = mutableListOf<Pair<Pt, Pt>>()
 
-        val coeff = 0.982f - (cueForce.coerceIn(1, 10) - 1) * 0.003f
+        // عند القوة 1 (المبتدئين) = 0.0f، وعند القوة 10 (Archons Max) يتدرج انضغاط الوسادة
+        val forceLevel = cueForce.coerceIn(1, 10)
+        val compression = (forceLevel - 1) * 0.0035f
 
         for (bankIndex in 0 until max(0, maxBanks)) {
             val cand = mutableListOf<Pair<Float, Char>>()
@@ -76,11 +72,24 @@ object Geometry {
             out.add(Pt(cx, cy) to Pt(hitX, hitY))
 
             if (axis == 'x') {
+                val normal = abs(vx)
+                val tangent = abs(vy)
                 vx = -vx
-                vy *= coeff
+                // الضربات العمودية الصافية تعود بنسبة 100%، بينما الزوايا الأخرى تتأثر بقوة العصا
+                if (tangent / (normal + 1e-5f) < 0.12f) {
+                    vy *= 1.0f
+                } else {
+                    vy *= (1.0f - compression).coerceIn(0.92f, 1.0f)
+                }
             } else {
+                val normal = abs(vy)
+                val tangent = abs(vx)
                 vy = -vy
-                vx *= coeff
+                if (tangent / (normal + 1e-5f) < 0.12f) {
+                    vx *= 1.0f
+                } else {
+                    vx *= (1.0f - compression).coerceIn(0.92f, 1.0f)
+                }
             }
 
             val len = hypot(vx, vy)
