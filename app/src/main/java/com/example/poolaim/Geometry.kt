@@ -34,12 +34,11 @@ object Geometry {
     fun clamp(p: Pt, r: Box) = Pt(min(max(p.first, r.l), r.r), min(max(p.second, r.t), r.b))
 
     /**
-     * حساب ارتدادات الجدار بالفيزياء الديناميكية لقوة العصا:
-     * - قوة 5 تعادل المعامل المرجعي الأصلي 0.982f تماماً.
-     * - القوى من 1 إلى 4 تضيق الزاوية للعصيان الضعيفة.
-     * - القوى من 6 إلى 10 توسع زاوية الانفراج لمطابقة انضغاط المطاط للعصيان القوية.
+     * حساب ارتدادات الجدار بدقة فيزيائية مرتبطة بقوة العصا:
+     * - قوة 1 (عصا المبتدئين): المعامل المرجعي الأصلي 0.982f.
+     * - كلما زادت القوة نحو 10: يضيق المسار وتضم الخطوط نحو بعضها.
      */
-    fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4, cueForce: Int = 5): List<Pair<Pt, Pt>> {
+    fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4, cueForce: Int = 1): List<Pair<Pt, Pt>> {
         var vx = dir.first
         var vy = dir.second
         if (!vx.isFinite() || !vy.isFinite() || (vx == 0f && vy == 0f)) return emptyList()
@@ -58,8 +57,8 @@ object Geometry {
         var cy = start.second.coerceIn(boundT, boundB)
         val out = mutableListOf<Pair<Pt, Pt>>()
 
-        // معامل ديناميكي: عند force=5 يكون 0.982f، وعند force=10 يصبح 1.01f
-        val forceCoeff = 0.982f + (cueForce.coerceIn(1, 10) - 5) * 0.0055f
+        // مع زيادة القوة تضيق زاوية الخروج تدريجياً
+        val forceCoeff = 0.982f - (cueForce.coerceIn(1, 10) - 1) * 0.0042f
 
         for (bankIndex in 0 until max(0, maxBanks)) {
             val cand = mutableListOf<Pair<Float, Char>>()
