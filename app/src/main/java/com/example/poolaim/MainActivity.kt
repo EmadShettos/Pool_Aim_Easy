@@ -124,14 +124,12 @@ class MainActivity : Activity() {
                 val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
                 val fileUri = dm.getUriForDownloadedFile(downloadId)
                 if (fileUri != null) {
-                    // تحديث كود التثبيت واعتماده فوراً
                     latestSha?.let { sha ->
                         getSharedPreferences(Lang.PREFS, MODE_PRIVATE).edit()
                             .putString(PREF_LAST_SHA, sha)
                             .apply()
                     }
                     isUpdateRequired = false
-                    build(scroll?.scrollY ?: 0)
                     installApk(fileUri)
                 } else {
                     Toast.makeText(
@@ -151,6 +149,8 @@ class MainActivity : Activity() {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
             }
             startActivity(installIntent)
+            // إغلاق واجهة التطبيق فوراً لفتح التثبيت بسلاسة
+            finish()
         } catch (e: Exception) {
             Toast.makeText(this, "تعذر فتح ملف التثبيت: ${e.message}", Toast.LENGTH_LONG).show()
         }
