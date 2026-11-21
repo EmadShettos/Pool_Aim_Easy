@@ -23,7 +23,7 @@ class OverlayView(ctx: Context) : View(ctx) {
     )
     var thickness = 3f
     var themeIdx = 0
-    var cueForce = 1 // القوة الافتراضية 1 (عصا المبتدئين)
+    var cueForce = 1 // القوة الافتراضية لعصا المبتدئين
     var locked = false
     var rectHidden = false
     var aimHidden = false
@@ -36,7 +36,7 @@ class OverlayView(ctx: Context) : View(ctx) {
     private var loaded = false
 
     private val pocketR = 14f * d
-    private val snapThresh = 24f * d
+    private val snapThresh = 28f * d
     val touchOffX get() = 2.6f * pocketR
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER }
@@ -54,7 +54,6 @@ class OverlayView(ctx: Context) : View(ctx) {
     private val ghostDistPx get() = ghostDistStep * 3f * d
     private fun pulse() = 0.5f
 
-    // أبعاد الطاولة الافتراضية الدقيقة المطابقة للعبة 8 Ball Pool
     fun resetLayout() {
         val w = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
         val h = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
@@ -66,16 +65,24 @@ class OverlayView(ctx: Context) : View(ctx) {
         onChanged?.invoke()
     }
 
-    // تدوير المستطيل ونقاط التحكم 180 درجة داخل الطاولة
+    // تدوير كامل للمستطيل نفسه ومحتوياته والجيوب الستة 180 درجة حول الشاشة
     fun rotateTable() {
-        val cx = (rect.left + rect.right) / 2f
-        val cy = (rect.top + rect.bottom) / 2f
+        val w = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
+        val h = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
+
+        val nl = w - rect.right
+        val nr = w - rect.left
+        val nt = h - rect.bottom
+        val nb = h - rect.top
+        rect.set(nl, nt, nr, nb)
+
         fun rot(p: PointF) {
-            p.set(2 * cx - p.x, 2 * cy - p.y)
+            p.set(w - p.x, h - p.y)
         }
         rot(p1)
         rot(p2)
         rot(marker)
+
         save()
         invalidate()
         onChanged?.invoke()
@@ -105,7 +112,7 @@ class OverlayView(ctx: Context) : View(ctx) {
 
     fun setPoint(key: String, x: Float, y: Float, final: Boolean) {
         when (key) {
-            "p1", "p2" -> if (final) place(key, x, y) else {
+            "p1", "p2" -> {
                 val (nx, ny) = Geometry.clamp(Pt(x, y), box())
                 (if (key == "p1") p1 else p2).set(nx, ny)
             }
@@ -122,15 +129,6 @@ class OverlayView(ctx: Context) : View(ctx) {
             }
         }
         invalidate()
-    }
-
-    private fun place(which: String, x: Float, y: Float) {
-        var (nx, ny) = Geometry.clamp(Pt(x, y), box())
-        if (flags["snap"] == true && flags["ghost"] == true) {
-            val (pc, dd) = Geometry.nearestPocket(Pt(nx, ny), box())
-            if (dd <= snapThresh) { nx = pc.first; ny = pc.second }
-        }
-        if (which == "p1") p1.set(nx, ny) else p2.set(nx, ny)
     }
 
     private fun keepInside() {
@@ -194,23 +192,40 @@ class OverlayView(ctx: Context) : View(ctx) {
             for (p in pockets) glowLine(c, marker.x, marker.y, p.first, p.second, color, 30, 70)
             for (p in pockets) line(c, marker.x, marker.y, p.first, p.second, th, color)
         }
-        if (!aimHidden && flags["single"] == true) {
-            glowLine(c, p1.x, p1.y, p2.x, p2.y, Color.WHITE, 60, 110)
-            line(c, p1.x, p1.y, p2.x, p2.y, th, Color.BLACK)
-        }
 
         var segs: List<Pair<Pt, Pt>> = emptyList()
-        val snapped = false
+        var snapped = false
         val dx = p2.x - p1.x
         val dy = p2.y - p1.y
-        if (!aimHidden && (flags["bank"] == true || flags["double_bank"] == true) && (dx != 0f || dy != 0f)) {
-            val len = hypot(dx, dy)
-            val maxBanks = if (flags["double_bank"] == true) 4 else 2
-            val bw = max(2f * d, th + d)
-            glowLine(c, p1.x, p1.y, p2.x, p2.y, Color.WHITE, 60, 110)
-            line(c, p1.x, p1.y, p2.x, p2.y, bw, Color.BLACK)
 
-            val m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks, cueForce)
+        val hasAim = (dx != 0f || dy != 0f)
+        val isSingle = flags["single"] == true
+        val isBank = flags["bank"] == true
+        val isDouble = flags["double_bank"] == true
+
+        if (!aimHidden && hasAim && (isSingle || isBank || isDouble)) {
+            val len = hypot(dx, dy)
+            var maxBanks = if (isDouble) 4 else if (isBank) 2 else 1
+            val bw = max(2f * d, th + d)
+
+            glowLine(c, p1.x, p1.y, p2.x, p2.y, Color.WHITE, 60, 110)
+            line(c, p1.x, p1.y, p2.x, p2.y, th, Color.BLACK)
+
+            var m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks, cueForce)
+
+            // ميزة Snap to pockets لخطوط الهدف عند تفعيلها
+            if (flags["snap"] == true && m.isNotEmpty()) {
+                val last = m.last().second
+                val (pc, distP) = Geometry.nearestPocket(last, b)
+                if (distP <= snapThresh) {
+                    val mod = m.toMutableList()
+                    val lastSeg = mod.removeAt(mod.size - 1)
+                    mod.add(lastSeg.first to pc)
+                    m = mod
+                    snapped = true
+                }
+            }
+
             segs = m
             for ((i, s) in m.withIndex()) {
                 glowLine(c, s.first.first, s.first.second, s.second.first, s.second.second, Color.WHITE, 60, 110)
@@ -222,7 +237,7 @@ class OverlayView(ctx: Context) : View(ctx) {
             }
         }
 
-        // إظهار الكرة الشبحية بمجرد تفعيل المربع الخاص بها دون اشتراط C-8 Line
+        // إظهار الكرة الشبحية بمجرد تفعيل المربع الخاص بها بشكل مستقل
         var info: Triple<Int, Float, Float>? = null
         if (flags["ghost"] == true) info = drawGhost(c, b)
 
