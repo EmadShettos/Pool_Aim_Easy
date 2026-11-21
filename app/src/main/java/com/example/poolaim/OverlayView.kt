@@ -23,6 +23,7 @@ class OverlayView(ctx: Context) : View(ctx) {
     )
     var thickness = 3f
     var themeIdx = 0
+    var cueForce = 5 // قوة العصا من 1 إلى 10
     var locked = false
     var rectHidden = false
     var aimHidden = false
@@ -192,7 +193,9 @@ class OverlayView(ctx: Context) : View(ctx) {
             val bw = max(2f * d, th + d)
             glowLine(c, p1.x, p1.y, p2.x, p2.y, Color.WHITE, 60, 110)
             line(c, p1.x, p1.y, p2.x, p2.y, bw, Color.BLACK)
-            val m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks)
+
+            // تمرير قوة العصا cueForce إلى المحرك الفيزيائي
+            val m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks, cueForce)
             segs = m
             for ((i, s) in m.withIndex()) {
                 glowLine(c, s.first.first, s.first.second, s.second.first, s.second.second, Color.WHITE, 60, 110)
@@ -284,6 +287,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         }
         if (segs.isNotEmpty()) {
             parts.add("${max(0, segs.size - 1)} ${Lang.t(context, "hud_banks")}")
+            parts.add("${if (ar) "قوة" else "P"}: $cueForce")
             if (snapped) parts.add(Lang.t(context, "hud_pocketed"))
         }
         val s = parts.joinToString("  |  ")
@@ -303,6 +307,7 @@ class OverlayView(ctx: Context) : View(ctx) {
             putFloat("p1x", p1.x); putFloat("p1y", p1.y); putFloat("p2x", p2.x); putFloat("p2y", p2.y)
             putFloat("mx", marker.x); putFloat("my", marker.y)
             putFloat("thick", thickness); putInt("theme", themeIdx)
+            putInt("cue_force", cueForce)
             putInt("gdist", ghostDistStep); putInt("gsize", ghostSizeStep)
             putInt("glow_step", glowStep); putInt("glow_size", glowSizeStep)
             putBoolean("locked", locked); putBoolean("rect_hidden", rectHidden)
@@ -323,6 +328,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         hideAll = prefs.getBoolean("hide_all", false)
         thickness = prefs.getFloat("thick", 3f).coerceIn(1f, 10f)
         themeIdx = prefs.getInt("theme", 0).coerceIn(0, THEMES.size - 1)
+        cueForce = prefs.getInt("cue_force", 5).coerceIn(1, 10)
         for (k in flags.keys.toList()) flags[k] = prefs.getBoolean("f_$k", flags[k]!!)
         if (!prefs.contains("l")) return
         val l = prefs.getFloat("l", 0f); val t = prefs.getFloat("t", 0f)
