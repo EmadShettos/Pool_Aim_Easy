@@ -27,6 +27,7 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -79,6 +80,7 @@ object Lang {
         "d_ghost" to "Open the Ghost ball menu and tick the box to show the best pocket line and the ghost circle. Use Distance and Size to adjust the circle.",
         "m_hide_all" to "Hide all",
         "m_show_all" to "Show",
+        "m_rotate" to "Rotate 🔄",
         "m_stop" to "Stop",
         "m_hide_rect" to "Hide rect",
         "m_show_rect" to "Show rect",
@@ -137,6 +139,7 @@ object Lang {
         "d_ghost" to "افتح قائمة الكرة الشبحية وعلّم المربع لإظهار أفضل خط للجيب والدائرة الشبحية. استخدم المسافة والحجم لضبط الدائرة.",
         "m_hide_all" to "إخفاء الكل",
         "m_show_all" to "إظهار",
+        "m_rotate" to "تدوير 🔄",
         "m_stop" to "إيقاف",
         "m_hide_rect" to "إخفاء المستطيل",
         "m_show_rect" to "إظهار المستطيل",
@@ -313,6 +316,8 @@ class OverlayService : Service() {
     private lateinit var ghostPanelView: LinearLayout
     private lateinit var c8PanelView: LinearLayout
     private lateinit var glowPanelView: LinearLayout
+    private lateinit var forceDropdown: HorizontalScrollView
+    private lateinit var forceBtnRef: Button
     private lateinit var controlsParams: WindowManager.LayoutParams
     private lateinit var overlayParams: WindowManager.LayoutParams
     private val handles = mutableListOf<Handle>()
@@ -409,7 +414,7 @@ class OverlayService : Service() {
             val active = if (view.hideAll) false else when (h.key) {
                 "tl", "br" -> !view.locked && !view.rectHidden
                 "marker" -> view.flags["lines"] == true
-                "p1", "p2" -> !view.aimHidden
+                "p1", "p2" -> !view.aimHidden || view.flags["ghost"] == true
                 else -> true
             }
             val p = view.touchPos(h.key)
@@ -569,7 +574,9 @@ class OverlayService : Service() {
         rowLines.addView(tv(T("m_line"), 11f, Color.WHITE, true),
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f))
 
-        fun addMiniCheck(num: String, key: String) {
+        val checkBoxes = mutableMapOf<String, CheckBox>()
+
+        fun addExclusiveCheck(num: String, key: String) {
             val h = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -580,17 +587,36 @@ class OverlayService : Service() {
                 isChecked = view.flags[key] == true
                 buttonTintList = ColorStateList.valueOf(Color.WHITE)
                 setOnCheckedChangeListener { _, on ->
-                    if ((view.flags[key] == true) != on) view.toggle(key)
+                    if (on) {
+                        for ((otherK, otherCb) in checkBoxes) {
+                            if (otherK != key && otherCb.isChecked) {
+                                otherCb.isChecked = false
+                                view.flags[otherK] = false
+                            }
+                        }
+                        view.flags[key] = true
+                    } else {
+                        // الحفاظ على خط واحد مفعل دائماً على الأقل
+                        if (checkBoxes.values.none { it.isChecked }) {
+                            isChecked = true
+                            view.flags[key] = true
+                        } else {
+                            view.flags[key] = false
+                        }
+                    }
+                    view.save()
+                    view.invalidate()
                     syncHandles()
                 }
             }
+            checkBoxes[key] = cb
             h.addView(cb)
             rowLines.addView(h, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
 
-        addMiniCheck("1", "single")
-        addMiniCheck("2", "bank")
-        addMiniCheck("4", "double_bank")
+        addExclusiveCheck("1", "single")
+        addExclusiveCheck("2", "bank")
+        addExclusiveCheck("4", "double_bank")
         panel.addView(rowLines)
 
         return panel
@@ -642,7 +668,7 @@ class OverlayService : Service() {
         val menuOpen = sp.getBoolean("menu_open", false)
         val savedScroll = sp.getInt("menu_scroll", 0)
 
-        var currentForce = sp.getInt("cue_force", 5).coerceIn(1, 10)
+        var currentForce = sp.getInt("cue_force", 1).coerceIn(1, 10)
         runCatching { view.cueForce = currentForce }
 
         controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -709,11 +735,19 @@ class OverlayService : Service() {
             }
         }
 
+        // 1. زر إظهار/إخفاء الكل
         list.addView(btn(T(if (view.hideAll) "m_show_all" else "m_hide_all")) { b ->
             view.hideAll = !view.hideAll
             b.text = T(if (view.hideAll) "m_show_all" else "m_hide_all")
             view.save(); view.invalidate(); syncHandles()
         })
+
+        // 2. زر التدوير 🔄 ثاني زر في القائمة
+        list.addView(btn(T("m_rotate")) {
+            view.rotateTable()
+        })
+
+        // 3. باقي أزرار المستطيل والتحكم
         list.addView(btn(T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")) { b ->
             view.rectHidden = !view.rectHidden
             b.text = T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")
@@ -729,21 +763,56 @@ class OverlayService : Service() {
         list.addView(c8, panelLp())
         list.addView(btn(T("m_ghost")) { togglePanel(ghost) })
         list.addView(ghost, panelLp())
+
+        // القائمة المنسدلة لاختيار القوة من 1 إلى 10
+        fun forceText(f: Int) = "${T("m_force")}: $f"
+        val forceBtn = btn(forceText(currentForce)) { }
+        forceBtnRef = forceBtn
+
+        val forceList = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding((4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt())
+            background = darkBox()
+        }
+
+        val forceScroll = HorizontalScrollView(this).apply {
+            visibility = View.GONE
+            addView(forceList)
+        }
+        forceDropdown = forceScroll
+
+        for (p in 1..10) {
+            val numBtn = Button(this).apply {
+                text = "$p"
+                textSize = 10f
+                minWidth = 0; minHeight = 0
+                minimumWidth = (32f * d).toInt()
+                minimumHeight = (30f * d).toInt()
+                setPadding((6 * d).toInt(), 0, (6 * d).toInt(), 0)
+                setOnClickListener {
+                    currentForce = p
+                    sp.edit().putInt("cue_force", currentForce).apply()
+                    forceBtnRef.text = forceText(currentForce)
+                    forceDropdown.visibility = View.GONE
+                    runCatching { view.cueForce = currentForce; view.save(); view.invalidate() }
+                }
+            }
+            forceList.addView(numBtn)
+        }
+
+        forceBtn.setOnClickListener {
+            forceDropdown.visibility = if (forceDropdown.visibility == View.GONE) View.VISIBLE else View.GONE
+        }
+
+        // موضع زر Force بين Ghost ball و Line +
+        list.addView(forceBtn)
+        list.addView(forceDropdown, panelLp())
+
         list.addView(btn(T("m_line_plus")) { view.thicker(1f) })
         list.addView(btn(T("m_line_minus")) { view.thicker(-1f) })
         list.addView(btn(T("m_glow")) { togglePanel(glow) })
         list.addView(glow, panelLp())
         list.addView(btn(T("m_theme")) { view.nextTheme() })
-
-        // زر قوة الضربة (Force 1 - 10)
-        fun forceLabel(f: Int) = "${T("m_force")}: $f"
-        list.addView(btn(forceLabel(currentForce)) { b ->
-            currentForce = if (currentForce >= 10) 1 else currentForce + 1
-            sp.edit().putInt("cue_force", currentForce).apply()
-            b.text = forceLabel(currentForce)
-            runCatching { view.cueForce = currentForce; view.invalidate() }
-        })
-
         list.addView(btn(T("m_hud")) { view.toggle("hud") })
         list.addView(btn(T("m_reset")) { view.resetLayout(); view.save() })
         list.addView(btn(T("m_stop")) { stopSelf() })
