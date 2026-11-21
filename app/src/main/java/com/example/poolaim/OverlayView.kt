@@ -54,10 +54,23 @@ class OverlayView(ctx: Context) : View(ctx) {
     private val ghostDistPx get() = ghostDistStep * 3f * d
     private fun pulse() = 0.5f
 
+    // ضبط المستطيل بذكاء: وضع اللعبة الأفقي (Landscape) أو وضع المتصفح الرأسي (Portrait)
     fun resetLayout() {
         val w = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
         val h = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
-        rect.set(w * 0.198f, h * 0.241f, w * 0.800f, h * 0.907f)
+
+        if (w > h) {
+            // وضع اللعبة الأفقي الكامل (8 Ball Pool Landscape)
+            rect.set(w * 0.198f, h * 0.241f, w * 0.800f, h * 0.907f)
+        } else {
+            // وضع الشاشة الرأسي قبل فتح اللعبة (وضع المتصفح نسبة 2:1)
+            val tw = w * 0.92f
+            val th = tw / 2.0f
+            val l = (w - tw) / 2f
+            val t = h * 0.28f
+            rect.set(l, t, l + tw, t + th)
+        }
+
         p1.set(rect.left + rect.width() * 0.25f, rect.centerY())
         p2.set(rect.right - rect.width() * 0.25f, rect.centerY())
         marker.set(rect.centerX(), rect.centerY())
@@ -65,7 +78,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         onChanged?.invoke()
     }
 
-    // تدوير كامل للمستطيل نفسه ومحتوياته والجيوب الستة 180 درجة حول الشاشة
+    // تدوير كامل للمستطيل والجيوب والنقاط 180 درجة
     fun rotateTable() {
         val w = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
         val h = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
@@ -89,7 +102,12 @@ class OverlayView(ctx: Context) : View(ctx) {
     }
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
-        if (!loaded) { resetLayout(); loaded = true }
+        // عند حدوث التدوير التلقائي للشاشة عند فتح أو إغلاق اللعبة
+        val orientationChanged = (ow > 0 && oh > 0) && ((ow > oh) != (w > h))
+        if (!loaded || orientationChanged) {
+            resetLayout()
+            loaded = true
+        }
         onChanged?.invoke()
     }
 
@@ -213,7 +231,6 @@ class OverlayView(ctx: Context) : View(ctx) {
 
             var m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks, cueForce)
 
-            // ميزة Snap to pockets لخطوط الهدف عند تفعيلها
             if (flags["snap"] == true && m.isNotEmpty()) {
                 val last = m.last().second
                 val (pc, distP) = Geometry.nearestPocket(last, b)
@@ -237,11 +254,9 @@ class OverlayView(ctx: Context) : View(ctx) {
             }
         }
 
-        // إظهار الكرة الشبحية بمجرد تفعيل المربع الخاص بها بشكل مستقل
         var info: Triple<Int, Float, Float>? = null
         if (flags["ghost"] == true) info = drawGhost(c, b)
 
-        // إظهار دوائر اللمس C و 8 إذا كان C-8 line مفعلاً أو Ghost Ball مفعلاً
         if (!aimHidden || flags["ghost"] == true) {
             for ((p, label) in listOf(p1 to "C", p2 to "8")) {
                 val qx = p.x + touchOffX
