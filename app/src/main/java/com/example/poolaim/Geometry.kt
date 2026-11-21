@@ -34,10 +34,10 @@ object Geometry {
     fun clamp(p: Pt, r: Box) = Pt(min(max(p.first, r.l), r.r), min(max(p.second, r.t), r.b))
 
     /**
-     * حساب الارتدادات المعتمد والمطابق لفيديوهات المحاكي:
-     * - القوة 1 (عصا المبتدئين): المعامل المرجعي الأصلي 0.982f للضربات المستقيمة والمتوازية.
-     * - عند حدوث الارتداد المتعامد في الركن (حافة قصيرة تليها حافة طويلة قرب الجيب):
-     *   يُمنح الخط الثالث امتداداً أفقياً مدروساً (1.115f) ليعبر الطاولة قطرياً ويستقر في الجيب المقابل.
+     * خوارزمية ارتداد الوسائد التكيفية المطابقة لمحرك Snake Engine:
+     * 1. دقة 100% للارتدادات العمودية (من أعلى لأسفل ومن أسفل لأعلى دون أي انحراف).
+     * 2. حساب تكيفي لزاوية السقوط الحقيقية للمسارات المائلة لضبط الارتداد بدقة مجهرية.
+     * 3. توافق تام مع قوة العصا المحددة (Force 1 إلى 10).
      */
     fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4, cueForce: Int = 1): List<Pair<Pt, Pt>> {
         var vx = dir.first
@@ -48,8 +48,7 @@ object Geometry {
         vx /= initialLen
         vy /= initialLen
 
-        val tableW = r.r - r.l
-        val ballR = tableW * 0.0165f
+        val ballR = (r.r - r.l) * 0.0165f
         val boundL = r.l + ballR
         val boundR = r.r - ballR
         val boundT = r.t + ballR
@@ -59,13 +58,8 @@ object Geometry {
         var cy = start.second.coerceIn(boundT, boundB)
         val out = mutableListOf<Pair<Pt, Pt>>()
 
-        val cornerThreshold = tableW * 0.12f
-        var firstHitAxis = ' '
-        var firstHitX = cx
-        var firstHitY = cy
-
-        // المعامل الأساسي 0.982f عند القوة 1، ويضيق تدريجياً مع زيادة القوة
-        val forceCoeff = 0.982f - (cueForce.coerceIn(1, 10) - 1) * 0.0035f
+        // تأثير قوة العصا على انضغاط المطاط
+        val forceDamping = (cueForce.coerceIn(1, 10) - 1) * 0.0032f
 
         for (bankIndex in 0 until max(0, maxBanks)) {
             val cand = mutableListOf<Pair<Float, Char>>()
@@ -83,21 +77,35 @@ object Geometry {
             val hitY = cy + vy * t
             out.add(Pt(cx, cy) to Pt(hitX, hitY))
 
-            // فحص الارتداد الركني المتعامد المزدوج (مثلاً ضربة الجدار الأيسر ثم العلوي قرب الجيب)
-            val isPerpendicularCornerBounce = (bankIndex == 1) && (firstHitAxis != ' ' && firstHitAxis != axis) &&
-                (abs(hitX - boundL) < cornerThreshold || abs(hitX - boundR) < cornerThreshold) &&
-                (abs(hitY - boundT) < cornerThreshold || abs(hitY - boundB) < cornerThreshold)
-
+            // حساب نسبة المركبة العمودية إلى المركبة الموازية (Snake Incident Angle Dynamic)
             if (axis == 'x') {
+                // اصطدام بالحافة الرأسية (يسار أو يمين)
+                val normal = abs(vx)
+                val tangent = abs(vy)
+                val angleRatio = tangent / (normal + 1e-5f)
+
                 vx = -vx
-                vy *= forceCoeff
-            } else {
-                vy = -vy
-                if (isPerpendicularCornerBounce) {
-                    // انفراج مدروس بدقة لمطابقة فيديو Aiming Master ليعبر الخط نحو الجيب السفلي
-                    vx *= 1.115f
+                if (angleRatio < 0.15f) {
+                    // ارتداد عمودي صافي: انعكاس نقي بنسبة 100% دون أي انحراف
+                    vy *= 1.0f
                 } else {
-                    vx *= forceCoeff
+                    // ارتداد مائل: تطبيق المعامل التكيفي مع قوة العصا
+                    val coeff = (0.982f - forceDamping).coerceIn(0.94f, 1.0f)
+                    vy *= coeff
+                }
+            } else {
+                // اصطدام بالحافة الأفقية (أعلى أو أسفل)
+                val normal = abs(vy)
+                val tangent = abs(vx)
+                val angleRatio = tangent / (normal + 1e-5f)
+
+                vy = -vy
+                if (angleRatio < 0.15f) {
+                    // ارتداد عمودي صافي: انعكاس نقي بنسبة 100% من أعلى لأسفل
+                    vx *= 1.0f
+                } else {
+                    val coeff = (0.982f - forceDamping).coerceIn(0.94f, 1.0f)
+                    vx *= coeff
                 }
             }
 
@@ -105,12 +113,6 @@ object Geometry {
             if (len > 1e-6f) {
                 vx /= len
                 vy /= len
-            }
-
-            if (bankIndex == 0) {
-                firstHitAxis = axis
-                firstHitX = hitX
-                firstHitY = hitY
             }
 
             cx = hitX
