@@ -115,8 +115,6 @@ class MainActivity : Activity() {
     private val REPO = "EmadShettos/Pool_Aim_Easy"
     private val APK_URL = "https://github.com/EmadShettos/Pool_Aim_Easy/releases/download/latest/EmadShettos-PoolAim.apk"
     private val PREF_LAST_SHA = "last_installed_sha"
-    private val PREF_PENDING_SHA = "pending_sha"
-    private val PREF_PENDING_TIME = "pending_time"
 
     private val onDownloadComplete = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -126,6 +124,14 @@ class MainActivity : Activity() {
                 val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
                 val fileUri = dm.getUriForDownloadedFile(downloadId)
                 if (fileUri != null) {
+                    // تحديث كود التثبيت واعتماده فوراً
+                    latestSha?.let { sha ->
+                        getSharedPreferences(Lang.PREFS, MODE_PRIVATE).edit()
+                            .putString(PREF_LAST_SHA, sha)
+                            .apply()
+                    }
+                    isUpdateRequired = false
+                    build(scroll?.scrollY ?: 0)
                     installApk(fileUri)
                 } else {
                     Toast.makeText(
@@ -155,11 +161,6 @@ class MainActivity : Activity() {
             Toast.makeText(this, if (Lang.isAr(this)) "جاري تنزيل التحديث في الخلفية..." else "Downloading update in background...", Toast.LENGTH_SHORT).show()
             return
         }
-
-        getSharedPreferences(Lang.PREFS, MODE_PRIVATE).edit()
-            .putString(PREF_PENDING_SHA, latestSha)
-            .putLong(PREF_PENDING_TIME, System.currentTimeMillis())
-            .apply()
 
         val request = DownloadManager.Request(Uri.parse(APK_URL)).apply {
             setTitle("Pool Aim Shettos Update")
@@ -221,26 +222,12 @@ class MainActivity : Activity() {
                         val sha = json.getJSONObject(0).getString("sha")
                         latestSha = sha
                         val prefs = getSharedPreferences(Lang.PREFS, MODE_PRIVATE)
-                        var installedSha = prefs.getString(PREF_LAST_SHA, null)
-
-                        val pendingSha = prefs.getString(PREF_PENDING_SHA, null)
-                        if (pendingSha != null) {
-                            val pendingTime = prefs.getLong(PREF_PENDING_TIME, 0L)
-                            val updatedAt = packageManager.getPackageInfo(packageName, 0).lastUpdateTime
-                            if (updatedAt >= pendingTime) {
-                                prefs.edit()
-                                    .putString(PREF_LAST_SHA, pendingSha)
-                                    .remove(PREF_PENDING_SHA)
-                                    .remove(PREF_PENDING_TIME)
-                                    .apply()
-                                installedSha = pendingSha
-                            }
-                        }
+                        val installedSha = prefs.getString(PREF_LAST_SHA, null)
 
                         if (installedSha == null) {
                             prefs.edit().putString(PREF_LAST_SHA, sha).apply()
                         } else {
-                            val needUpdate = installedSha != sha
+                            val needUpdate = (installedSha != sha)
                             if (needUpdate != isUpdateRequired) {
                                 runOnUiThread {
                                     isUpdateRequired = needUpdate
@@ -250,8 +237,7 @@ class MainActivity : Activity() {
                         }
                     }
                 }
-            } catch (e: Exception) {
-            }
+            } catch (e: Exception) {}
         }
     }
 
