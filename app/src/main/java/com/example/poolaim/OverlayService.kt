@@ -86,6 +86,7 @@ object Lang {
         "m_unlock" to "Unlock rectangle",
         "m_reset" to "Reset",
         "m_theme" to "Theme",
+        "m_force" to "Force",
         "m_line_plus" to "Line +",
         "m_line_minus" to "Line -",
         "m_ghost" to "Ghost ball",
@@ -143,6 +144,7 @@ object Lang {
         "m_unlock" to "فتح المستطيل",
         "m_reset" to "إعادة ضبط",
         "m_theme" to "المظهر",
+        "m_force" to "قوة الضربة",
         "m_line_plus" to "سماكة +",
         "m_line_minus" to "سماكة -",
         "m_ghost" to "الكرة الشبحية",
@@ -511,7 +513,6 @@ class OverlayService : Service() {
     private fun ghostPanel(open: Boolean): LinearLayout {
         val panel = panelBase(open)
         
-        // الصف الأول: Ghost ball وبجواره Snap to pockets في نفس الصف بمسافة قريبة
         val row1 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -555,13 +556,11 @@ class OverlayService : Service() {
     private fun c8Panel(open: Boolean): LinearLayout {
         val panel = panelBase(open)
         
-        // السطر الأول: C-8 line وبجواره مربع التشغيل الرئيسي
         panel.addView(checkRow(T("m_c8"), !view.aimHidden, true) { on ->
             view.aimHidden = !on
             view.save(); view.invalidate(); syncHandles()
         })
         
-        // السطر الثاني: كلمة Line وبجوارها في نفس الصف مربعات 1 و 2 و 4
         val rowLines = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -643,6 +642,9 @@ class OverlayService : Service() {
         val menuOpen = sp.getBoolean("menu_open", false)
         val savedScroll = sp.getInt("menu_scroll", 0)
 
+        var currentForce = sp.getInt("cue_force", 5).coerceIn(1, 10)
+        runCatching { view.cueForce = currentForce }
+
         controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val scroll = ScrollView(this).apply {
@@ -699,7 +701,6 @@ class OverlayService : Service() {
         val panelW = (220 * d).toInt()
         val panelLp = { LinearLayout.LayoutParams(panelW, LinearLayout.LayoutParams.WRAP_CONTENT) }
 
-        // صياغة اسم الزر C-8 line (Bank Shot) بحيث يكون ما بين القوسين بحجم أصغر قليلاً
         val rawTitle = T("m_c8_title")
         val styledC8Title = SpannableString(rawTitle).apply {
             val openIdx = rawTitle.indexOf('(')
@@ -708,7 +709,6 @@ class OverlayService : Service() {
             }
         }
 
-        // الترتيب الدقيق المطلوب للأزرار من الأعلى للأسفل:
         list.addView(btn(T(if (view.hideAll) "m_show_all" else "m_hide_all")) { b ->
             view.hideAll = !view.hideAll
             b.text = T(if (view.hideAll) "m_show_all" else "m_hide_all")
@@ -734,6 +734,16 @@ class OverlayService : Service() {
         list.addView(btn(T("m_glow")) { togglePanel(glow) })
         list.addView(glow, panelLp())
         list.addView(btn(T("m_theme")) { view.nextTheme() })
+
+        // زر قوة الضربة (Force 1 - 10)
+        fun forceLabel(f: Int) = "${T("m_force")}: $f"
+        list.addView(btn(forceLabel(currentForce)) { b ->
+            currentForce = if (currentForce >= 10) 1 else currentForce + 1
+            sp.edit().putInt("cue_force", currentForce).apply()
+            b.text = forceLabel(currentForce)
+            runCatching { view.cueForce = currentForce; view.invalidate() }
+        })
+
         list.addView(btn(T("m_hud")) { view.toggle("hud") })
         list.addView(btn(T("m_reset")) { view.resetLayout(); view.save() })
         list.addView(btn(T("m_stop")) { stopSelf() })
