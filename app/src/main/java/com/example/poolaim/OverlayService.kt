@@ -315,7 +315,7 @@ class OverlayService : Service() {
     private lateinit var ghostPanelView: LinearLayout
     private lateinit var c8PanelView: LinearLayout
     private lateinit var glowPanelView: LinearLayout
-    private lateinit var forceVerticalList: LinearLayout
+    private lateinit var forcePanel: LinearLayout
     private lateinit var forceBtnRef: Button
     private lateinit var controlsParams: WindowManager.LayoutParams
     private lateinit var overlayParams: WindowManager.LayoutParams
@@ -548,7 +548,6 @@ class OverlayService : Service() {
     private fun c8Panel(open: Boolean): LinearLayout {
         val panel = panelBase(open)
         
-        // السطر الأول: C-8 line وبجواره مباشرة Snap to pockets في نفس الصف
         val rowTop = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -581,7 +580,6 @@ class OverlayService : Service() {
         rowTop.addView(cbSnap)
         panel.addView(rowTop)
 
-        // السطر الثاني: خيارات الخطوط 1 و 2 و 4 باختيار حصري
         val rowLines = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -779,47 +777,55 @@ class OverlayService : Service() {
         list.addView(btn(T("m_ghost")) { togglePanel(ghost) })
         list.addView(ghost, panelLp())
 
-        // قائمة اختيار القوة (قائمة عمودية من 1 إلى 10)
+        // القائمة المصغرة والأنيقة لاختيار القوة: شبكة أرقام صغيرة (1 إلى 10) على صفين
         fun forceText(f: Int) = "${T("m_force")}: $f"
         val forceBtn = btn(forceText(currentForce)) { }
         forceBtnRef = forceBtn
 
-        val forceVBox = LinearLayout(this).apply {
+        val forceBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
             setPadding((4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt())
             background = darkBox()
         }
-        forceVerticalList = forceVBox
+        forcePanel = forceBox
+
+        val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
         for (p in 1..10) {
             val numBtn = Button(this).apply {
-                text = "${T("m_force")}  $p"
-                textSize = 9.5f
+                text = "$p"
+                textSize = 10f
+                typeface = Typeface.DEFAULT_BOLD
                 minWidth = 0; minHeight = 0
                 minimumHeight = (28f * d).toInt()
-                setPadding((10 * d).toInt(), 0, (10 * d).toInt(), 0)
+                minimumWidth = (36f * d).toInt()
+                setPadding(0, 0, 0, 0)
                 setOnClickListener {
                     currentForce = p
                     sp.edit().putInt("cue_force", currentForce).apply()
                     forceBtnRef.text = forceText(currentForce)
-                    forceVerticalList.visibility = View.GONE
+                    forcePanel.visibility = View.GONE
                     runCatching { view.cueForce = currentForce; view.save(); view.invalidate() }
                 }
             }
-            forceVBox.addView(numBtn, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(0, (1 * d).toInt(), 0, (1 * d).toInt())
+            val targetRow = if (p <= 5) row1 else row2
+            targetRow.addView(numBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins((2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt())
             })
         }
 
+        forceBox.addView(row1)
+        forceBox.addView(row2)
+
         forceBtn.setOnClickListener {
-            forceVerticalList.visibility = if (forceVerticalList.visibility == View.GONE) View.VISIBLE else View.GONE
+            forcePanel.visibility = if (forcePanel.visibility == View.GONE) View.VISIBLE else View.GONE
         }
 
         // موضع زر القوة بين Ghost ball و Line +
         list.addView(forceBtn)
-        list.addView(forceVerticalList, panelLp())
+        list.addView(forcePanel, panelLp())
 
         list.addView(btn(T("m_line_plus")) { view.thicker(1f) })
         list.addView(btn(T("m_line_minus")) { view.thicker(-1f) })
