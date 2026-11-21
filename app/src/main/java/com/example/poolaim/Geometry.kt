@@ -34,9 +34,9 @@ object Geometry {
     fun clamp(p: Pt, r: Box) = Pt(min(max(p.first, r.l), r.r), min(max(p.second, r.t), r.b))
 
     /**
-     * حساب ارتدادات الجدار بدقة فيزيائية مرتبطة بقوة العصا:
-     * - قوة 1 (عصا المبتدئين): المعامل المرجعي الأصلي 0.982f.
-     * - كلما زادت القوة نحو 10: يضيق المسار وتضم الخطوط نحو بعضها.
+     * حساب ارتدادات الجدار:
+     * - عند القوة 1 (عصا المبتدئين): المعامل هو 0.982f المرجعي الأصلي تماماً.
+     * - مع زيادة القوة نحو 10: يضيق المسار وتضم الخطوط المرتدة لبعضها تدريجياً.
      */
     fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4, cueForce: Int = 1): List<Pair<Pt, Pt>> {
         var vx = dir.first
@@ -57,8 +57,8 @@ object Geometry {
         var cy = start.second.coerceIn(boundT, boundB)
         val out = mutableListOf<Pair<Pt, Pt>>()
 
-        // مع زيادة القوة تضيق زاوية الخروج تدريجياً
-        val forceCoeff = 0.982f - (cueForce.coerceIn(1, 10) - 1) * 0.0042f
+        // عند cueForce = 1 يكون المعامل 0.982f تماماً، ومع زيادة القوة يضيق المسار
+        val forceCoeff = 0.982f - (cueForce.coerceIn(1, 10) - 1) * 0.0035f
 
         for (bankIndex in 0 until max(0, maxBanks)) {
             val cand = mutableListOf<Pair<Float, Char>>()
