@@ -18,16 +18,13 @@ val THEMES: List<Pair<String, Int>> = listOf(
 object Geometry {
     private const val EPS = 1e-3f
 
-    // القاعدة الأصلية الناجحة عند القوة 1
+    // المعامل الأساسي للقوة 1 (عصا بلياردو المبتدئين)
     private const val BASE_COEFF = 0.982f
-
-    // مقدار تغيّر المعامل مع كل درجة قوة (1 -> 10). قيمة تقديرية تحتاج معايرة.
-    // إذا أردت أن يكون التغير أقوى زد الرقم، وإذا أردت عكس الاتجاه اجعله سالباً.
-    private const val FORCE_STEP = 0.002f
+    private const val FORCE_STEP = 0.0022f
 
     fun reboundCoeff(cueForce: Int): Float {
         val f = cueForce.coerceIn(1, 10)
-        return (BASE_COEFF - (f - 1) * FORCE_STEP).coerceIn(0.90f, 1.0f)
+        return (BASE_COEFF - (f - 1) * FORCE_STEP).coerceIn(0.92f, 1.0f)
     }
 
     fun dist(a: Pt, b: Pt) = hypot(a.first - b.first, a.second - b.second)
@@ -53,7 +50,8 @@ object Geometry {
         vx /= initialLen
         vy /= initialLen
 
-        val ballR = (r.r - r.l) * 0.0165f
+        // ضبط نصف قطر الكرة الفعلي المتطابق مع وسائد اللعبة
+        val ballR = (r.r - r.l) * 0.0172f
         val boundL = r.l + ballR
         val boundR = r.r - ballR
         val boundT = r.t + ballR
@@ -83,10 +81,16 @@ object Geometry {
 
             if (axis == 'x') {
                 vx = -vx
-                vy *= coeff
+                // إذا كانت الضربة شبه عمودية على الحافة الرأسية، ترتد عمودياً بنسبة 100%
+                if (abs(vy) > 1e-4f) {
+                    vy *= coeff
+                }
             } else {
                 vy = -vy
-                vx *= coeff
+                // إذا كانت الضربة شبه عمودية على الحافة الأفقية، ترتد عمودياً بنسبة 100%
+                if (abs(vx) > 1e-4f) {
+                    vx *= coeff
+                }
             }
 
             val len = hypot(vx, vy)
