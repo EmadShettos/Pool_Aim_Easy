@@ -34,10 +34,9 @@ object Geometry {
     fun clamp(p: Pt, r: Box) = Pt(min(max(p.first, r.l), r.r), min(max(p.second, r.t), r.b))
 
     /**
-     * خوارزمية ارتداد الوسائد التكيفية المطابقة لمحرك Snake Engine:
-     * 1. دقة 100% للارتدادات العمودية (من أعلى لأسفل ومن أسفل لأعلى دون أي انحراف).
-     * 2. حساب تكيفي لزاوية السقوط الحقيقية للمسارات المائلة لضبط الارتداد بدقة مجهرية.
-     * 3. توافق تام مع قوة العصا المحددة (Force 1 إلى 10).
+     * حساب ارتدادات الجدار:
+     * - الحفاظ الحرفي على معادلتك الأصلية المعتمدة (0.982f) لاستعادة الدقة المرجعية التامة.
+     * - دقة تامة للارتدادات العمودية النظيفة مع توافق لقوة العصا.
      */
     fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4, cueForce: Int = 1): List<Pair<Pt, Pt>> {
         var vx = dir.first
@@ -58,8 +57,7 @@ object Geometry {
         var cy = start.second.coerceIn(boundT, boundB)
         val out = mutableListOf<Pair<Pt, Pt>>()
 
-        // تأثير قوة العصا على انضغاط المطاط
-        val forceDamping = (cueForce.coerceIn(1, 10) - 1) * 0.0032f
+        val coeff = 0.982f - (cueForce.coerceIn(1, 10) - 1) * 0.003f
 
         for (bankIndex in 0 until max(0, maxBanks)) {
             val cand = mutableListOf<Pair<Float, Char>>()
@@ -77,36 +75,12 @@ object Geometry {
             val hitY = cy + vy * t
             out.add(Pt(cx, cy) to Pt(hitX, hitY))
 
-            // حساب نسبة المركبة العمودية إلى المركبة الموازية (Snake Incident Angle Dynamic)
             if (axis == 'x') {
-                // اصطدام بالحافة الرأسية (يسار أو يمين)
-                val normal = abs(vx)
-                val tangent = abs(vy)
-                val angleRatio = tangent / (normal + 1e-5f)
-
                 vx = -vx
-                if (angleRatio < 0.15f) {
-                    // ارتداد عمودي صافي: انعكاس نقي بنسبة 100% دون أي انحراف
-                    vy *= 1.0f
-                } else {
-                    // ارتداد مائل: تطبيق المعامل التكيفي مع قوة العصا
-                    val coeff = (0.982f - forceDamping).coerceIn(0.94f, 1.0f)
-                    vy *= coeff
-                }
+                vy *= coeff
             } else {
-                // اصطدام بالحافة الأفقية (أعلى أو أسفل)
-                val normal = abs(vy)
-                val tangent = abs(vx)
-                val angleRatio = tangent / (normal + 1e-5f)
-
                 vy = -vy
-                if (angleRatio < 0.15f) {
-                    // ارتداد عمودي صافي: انعكاس نقي بنسبة 100% من أعلى لأسفل
-                    vx *= 1.0f
-                } else {
-                    val coeff = (0.982f - forceDamping).coerceIn(0.94f, 1.0f)
-                    vx *= coeff
-                }
+                vx *= coeff
             }
 
             val len = hypot(vx, vy)
