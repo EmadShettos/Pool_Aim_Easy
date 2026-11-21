@@ -748,19 +748,17 @@ class OverlayService : Service() {
             }
         }
 
-        // 1. زر إظهار/إخفاء الكل
+        // الترتيب والاتجاه الأصلي المعتمد للقائمة
         list.addView(btn(T(if (view.hideAll) "m_show_all" else "m_hide_all")) { b ->
             view.hideAll = !view.hideAll
             b.text = T(if (view.hideAll) "m_show_all" else "m_hide_all")
             view.save(); view.invalidate(); syncHandles()
         })
 
-        // 2. زر التدوير 🔄 الثاني في القائمة
         list.addView(btn(T("m_rotate")) {
             view.rotateTable()
         })
 
-        // 3. أزرار المستطيل والتحكم
         list.addView(btn(T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")) { b ->
             view.rectHidden = !view.rectHidden
             b.text = T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")
@@ -777,7 +775,7 @@ class OverlayService : Service() {
         list.addView(btn(T("m_ghost")) { togglePanel(ghost) })
         list.addView(ghost, panelLp())
 
-        // القائمة المصغرة والأنيقة لاختيار القوة: شبكة أرقام صغيرة (1 إلى 10) على صفين
+        // شبكة أرقام القوة الصغيرة والأنيقة (صفين من الأرقام الصافية فقط)
         fun forceText(f: Int) = "${T("m_force")}: $f"
         val forceBtn = btn(forceText(currentForce)) { }
         forceBtnRef = forceBtn
@@ -823,7 +821,6 @@ class OverlayService : Service() {
             forcePanel.visibility = if (forcePanel.visibility == View.GONE) View.VISIBLE else View.GONE
         }
 
-        // موضع زر القوة بين Ghost ball و Line +
         list.addView(forceBtn)
         list.addView(forcePanel, panelLp())
 
