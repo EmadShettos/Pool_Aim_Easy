@@ -27,7 +27,6 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.CheckBox
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -316,7 +315,7 @@ class OverlayService : Service() {
     private lateinit var ghostPanelView: LinearLayout
     private lateinit var c8PanelView: LinearLayout
     private lateinit var glowPanelView: LinearLayout
-    private lateinit var forceDropdown: HorizontalScrollView
+    private lateinit var forceVerticalList: LinearLayout
     private lateinit var forceBtnRef: Button
     private lateinit var controlsParams: WindowManager.LayoutParams
     private lateinit var overlayParams: WindowManager.LayoutParams
@@ -532,21 +531,9 @@ class OverlayService : Service() {
                 syncHandles()
             }
         }
-        
-        val tvSnap = tv(T("m_snap"), 10f, Color.argb(220, 255, 255, 255), false)
-        val cbSnap = CheckBox(this).apply {
-            isChecked = view.flags["snap"] == true
-            buttonTintList = ColorStateList.valueOf(Color.WHITE)
-            setOnCheckedChangeListener { _, on ->
-                if ((view.flags["snap"] == true) != on) view.toggle("snap")
-            }
-        }
 
         row1.addView(tvGhost)
         row1.addView(cbGhost)
-        row1.addView(View(this), LinearLayout.LayoutParams((10 * d).toInt(), 1))
-        row1.addView(tvSnap)
-        row1.addView(cbSnap)
         panel.addView(row1)
 
         panel.addView(seekRow(T("m_distance"), 10, view.ghostDistStep) { v ->
@@ -561,11 +548,40 @@ class OverlayService : Service() {
     private fun c8Panel(open: Boolean): LinearLayout {
         val panel = panelBase(open)
         
-        panel.addView(checkRow(T("m_c8"), !view.aimHidden, true) { on ->
-            view.aimHidden = !on
-            view.save(); view.invalidate(); syncHandles()
-        })
-        
+        // السطر الأول: C-8 line وبجواره مباشرة Snap to pockets في نفس الصف
+        val rowTop = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val tvC8 = tv(T("m_c8"), 11f, Color.WHITE, true)
+        val cbC8 = CheckBox(this).apply {
+            isChecked = !view.aimHidden
+            buttonTintList = ColorStateList.valueOf(Color.WHITE)
+            setOnCheckedChangeListener { _, on ->
+                view.aimHidden = !on
+                view.save(); view.invalidate(); syncHandles()
+            }
+        }
+
+        val tvSnap = tv(T("m_snap"), 10f, Color.argb(220, 255, 255, 255), false)
+        val cbSnap = CheckBox(this).apply {
+            isChecked = view.flags["snap"] == true
+            buttonTintList = ColorStateList.valueOf(Color.WHITE)
+            setOnCheckedChangeListener { _, on ->
+                view.flags["snap"] = on
+                view.save(); view.invalidate()
+            }
+        }
+
+        rowTop.addView(tvC8)
+        rowTop.addView(cbC8)
+        rowTop.addView(View(this), LinearLayout.LayoutParams((12 * d).toInt(), 1))
+        rowTop.addView(tvSnap)
+        rowTop.addView(cbSnap)
+        panel.addView(rowTop)
+
+        // السطر الثاني: خيارات الخطوط 1 و 2 و 4 باختيار حصري
         val rowLines = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -596,7 +612,6 @@ class OverlayService : Service() {
                         }
                         view.flags[key] = true
                     } else {
-                        // الحفاظ على خط واحد مفعل دائماً على الأقل
                         if (checkBoxes.values.none { it.isChecked }) {
                             isChecked = true
                             view.flags[key] = true
@@ -742,12 +757,12 @@ class OverlayService : Service() {
             view.save(); view.invalidate(); syncHandles()
         })
 
-        // 2. زر التدوير 🔄 ثاني زر في القائمة
+        // 2. زر التدوير 🔄 الثاني في القائمة
         list.addView(btn(T("m_rotate")) {
             view.rotateTable()
         })
 
-        // 3. باقي أزرار المستطيل والتحكم
+        // 3. أزرار المستطيل والتحكم
         list.addView(btn(T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")) { b ->
             view.rectHidden = !view.rectHidden
             b.text = T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")
@@ -764,49 +779,47 @@ class OverlayService : Service() {
         list.addView(btn(T("m_ghost")) { togglePanel(ghost) })
         list.addView(ghost, panelLp())
 
-        // القائمة المنسدلة لاختيار القوة من 1 إلى 10
+        // قائمة اختيار القوة (قائمة عمودية من 1 إلى 10)
         fun forceText(f: Int) = "${T("m_force")}: $f"
         val forceBtn = btn(forceText(currentForce)) { }
         forceBtnRef = forceBtn
 
-        val forceList = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        val forceVBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
             setPadding((4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt())
             background = darkBox()
         }
-
-        val forceScroll = HorizontalScrollView(this).apply {
-            visibility = View.GONE
-            addView(forceList)
-        }
-        forceDropdown = forceScroll
+        forceVerticalList = forceVBox
 
         for (p in 1..10) {
             val numBtn = Button(this).apply {
-                text = "$p"
-                textSize = 10f
+                text = "${T("m_force")}  $p"
+                textSize = 9.5f
                 minWidth = 0; minHeight = 0
-                minimumWidth = (32f * d).toInt()
-                minimumHeight = (30f * d).toInt()
-                setPadding((6 * d).toInt(), 0, (6 * d).toInt(), 0)
+                minimumHeight = (28f * d).toInt()
+                setPadding((10 * d).toInt(), 0, (10 * d).toInt(), 0)
                 setOnClickListener {
                     currentForce = p
                     sp.edit().putInt("cue_force", currentForce).apply()
                     forceBtnRef.text = forceText(currentForce)
-                    forceDropdown.visibility = View.GONE
+                    forceVerticalList.visibility = View.GONE
                     runCatching { view.cueForce = currentForce; view.save(); view.invalidate() }
                 }
             }
-            forceList.addView(numBtn)
+            forceVBox.addView(numBtn, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, (1 * d).toInt(), 0, (1 * d).toInt())
+            })
         }
 
         forceBtn.setOnClickListener {
-            forceDropdown.visibility = if (forceDropdown.visibility == View.GONE) View.VISIBLE else View.GONE
+            forceVerticalList.visibility = if (forceVerticalList.visibility == View.GONE) View.VISIBLE else View.GONE
         }
 
-        // موضع زر Force بين Ghost ball و Line +
+        // موضع زر القوة بين Ghost ball و Line +
         list.addView(forceBtn)
-        list.addView(forceDropdown, panelLp())
+        list.addView(forceVerticalList, panelLp())
 
         list.addView(btn(T("m_line_plus")) { view.thicker(1f) })
         list.addView(btn(T("m_line_minus")) { view.thicker(-1f) })
