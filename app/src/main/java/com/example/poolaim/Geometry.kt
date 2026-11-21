@@ -18,6 +18,18 @@ val THEMES: List<Pair<String, Int>> = listOf(
 object Geometry {
     private const val EPS = 1e-3f
 
+    // القاعدة الأصلية الناجحة عند القوة 1
+    private const val BASE_COEFF = 0.982f
+
+    // مقدار تغيّر المعامل مع كل درجة قوة (1 -> 10). قيمة تقديرية تحتاج معايرة.
+    // إذا أردت أن يكون التغير أقوى زد الرقم، وإذا أردت عكس الاتجاه اجعله سالباً.
+    private const val FORCE_STEP = 0.002f
+
+    fun reboundCoeff(cueForce: Int): Float {
+        val f = cueForce.coerceIn(1, 10)
+        return (BASE_COEFF - (f - 1) * FORCE_STEP).coerceIn(0.90f, 1.0f)
+    }
+
     fun dist(a: Pt, b: Pt) = hypot(a.first - b.first, a.second - b.second)
 
     fun pocketCenters(r: Box): List<Pt> {
@@ -51,9 +63,7 @@ object Geometry {
         var cy = start.second.coerceIn(boundT, boundB)
         val out = mutableListOf<Pair<Pt, Pt>>()
 
-        // عند القوة 1 (المبتدئين) = 0.0f، وعند القوة 10 (Archons Max) يتدرج انضغاط الوسادة
-        val forceLevel = cueForce.coerceIn(1, 10)
-        val compression = (forceLevel - 1) * 0.0035f
+        val coeff = reboundCoeff(cueForce)
 
         for (bankIndex in 0 until max(0, maxBanks)) {
             val cand = mutableListOf<Pair<Float, Char>>()
@@ -72,24 +82,11 @@ object Geometry {
             out.add(Pt(cx, cy) to Pt(hitX, hitY))
 
             if (axis == 'x') {
-                val normal = abs(vx)
-                val tangent = abs(vy)
                 vx = -vx
-                // الضربات العمودية الصافية تعود بنسبة 100%، بينما الزوايا الأخرى تتأثر بقوة العصا
-                if (tangent / (normal + 1e-5f) < 0.12f) {
-                    vy *= 1.0f
-                } else {
-                    vy *= (1.0f - compression).coerceIn(0.92f, 1.0f)
-                }
+                vy *= coeff
             } else {
-                val normal = abs(vy)
-                val tangent = abs(vx)
                 vy = -vy
-                if (tangent / (normal + 1e-5f) < 0.12f) {
-                    vx *= 1.0f
-                } else {
-                    vx *= (1.0f - compression).coerceIn(0.92f, 1.0f)
-                }
+                vx *= coeff
             }
 
             val len = hypot(vx, vy)
