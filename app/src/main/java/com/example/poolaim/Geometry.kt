@@ -34,9 +34,10 @@ object Geometry {
     fun clamp(p: Pt, r: Box) = Pt(min(max(p.first, r.l), r.r), min(max(p.second, r.t), r.b))
 
     /**
-     * حساب ارتدادات الجدار:
-     * - عند القوة 1 (عصا المبتدئين): المعامل هو 0.982f المرجعي الأصلي تماماً.
-     * - مع زيادة القوة نحو 10: يضيق المسار وتضم الخطوط المرتدة لبعضها تدريجياً.
+     * حساب الارتدادات المعتمد والمطابق لفيديوهات المحاكي:
+     * - القوة 1 (عصا المبتدئين): المعامل المرجعي الأصلي 0.982f للضربات المستقيمة والمتوازية.
+     * - عند حدوث الارتداد المتعامد في الركن (حافة قصيرة تليها حافة طويلة قرب الجيب):
+     *   يُمنح الخط الثالث امتداداً أفقياً مدروساً (1.115f) ليعبر الطاولة قطرياً ويستقر في الجيب المقابل.
      */
     fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4, cueForce: Int = 1): List<Pair<Pt, Pt>> {
         var vx = dir.first
@@ -47,7 +48,8 @@ object Geometry {
         vx /= initialLen
         vy /= initialLen
 
-        val ballR = (r.r - r.l) * 0.0165f
+        val tableW = r.r - r.l
+        val ballR = tableW * 0.0165f
         val boundL = r.l + ballR
         val boundR = r.r - ballR
         val boundT = r.t + ballR
@@ -57,7 +59,12 @@ object Geometry {
         var cy = start.second.coerceIn(boundT, boundB)
         val out = mutableListOf<Pair<Pt, Pt>>()
 
-        // عند cueForce = 1 يكون المعامل 0.982f تماماً، ومع زيادة القوة يضيق المسار
+        val cornerThreshold = tableW * 0.12f
+        var firstHitAxis = ' '
+        var firstHitX = cx
+        var firstHitY = cy
+
+        // المعامل الأساسي 0.982f عند القوة 1، ويضيق تدريجياً مع زيادة القوة
         val forceCoeff = 0.982f - (cueForce.coerceIn(1, 10) - 1) * 0.0035f
 
         for (bankIndex in 0 until max(0, maxBanks)) {
@@ -76,18 +83,34 @@ object Geometry {
             val hitY = cy + vy * t
             out.add(Pt(cx, cy) to Pt(hitX, hitY))
 
+            // فحص الارتداد الركني المتعامد المزدوج (مثلاً ضربة الجدار الأيسر ثم العلوي قرب الجيب)
+            val isPerpendicularCornerBounce = (bankIndex == 1) && (firstHitAxis != ' ' && firstHitAxis != axis) &&
+                (abs(hitX - boundL) < cornerThreshold || abs(hitX - boundR) < cornerThreshold) &&
+                (abs(hitY - boundT) < cornerThreshold || abs(hitY - boundB) < cornerThreshold)
+
             if (axis == 'x') {
                 vx = -vx
                 vy *= forceCoeff
             } else {
                 vy = -vy
-                vx *= forceCoeff
+                if (isPerpendicularCornerBounce) {
+                    // انفراج مدروس بدقة لمطابقة فيديو Aiming Master ليعبر الخط نحو الجيب السفلي
+                    vx *= 1.115f
+                } else {
+                    vx *= forceCoeff
+                }
             }
 
             val len = hypot(vx, vy)
             if (len > 1e-6f) {
                 vx /= len
                 vy /= len
+            }
+
+            if (bankIndex == 0) {
+                firstHitAxis = axis
+                firstHitX = hitX
+                firstHitY = hitY
             }
 
             cx = hitX
