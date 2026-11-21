@@ -1,8 +1,11 @@
 package com.example.poolaim
 
 import android.app.Activity
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -15,6 +18,7 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -24,6 +28,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONArray
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
@@ -102,11 +107,59 @@ class MainActivity : Activity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun T(k: String) = Lang.t(this, k)
 
-    // متغيرات التحديث الإلزامي
     private var isUpdateRequired = false
-    private var latestDownloadUrl = "https://github.com/EmadShettos/Pool_Aim_Easy/actions"
+    private var isDownloading = false
     private val REPO = "EmadShettos/Pool_Aim_Easy"
     private val PREF_LAST_SHA = "last_installed_sha"
+    private var downloadId: Long = -1L
+
+    private val onDownloadComplete = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
+            if (id == downloadId) {
+                isDownloading = false
+                val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+                val fileUri = dm.getUriForDownloadedFile(downloadId)
+                if (fileUri != null) {
+                    installApk(fileUri)
+                }
+            }
+        }
+    }
+
+    private fun installApk(fileUri: Uri) {
+        try {
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(fileUri, "application/vnd.android.package-archive")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
+            startActivity(installIntent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "تعذر فتح ملف التثبيت: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun startDirectDownload() {
+        if (isDownloading) {
+            Toast.makeText(this, if (Lang.isAr(this)) "جاري تنزيل التحديث في الخلفية..." else "Downloading update in background...", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // رابط التحميل المباشر للـ APK المحدث من مستودعك
+        val directApkUrl = "https://raw.githubusercontent.com/$REPO/main/app-release.apk"
+        val request = DownloadManager.Request(Uri.parse(directApkUrl)).apply {
+            setTitle("Pool Aim Shettos Update")
+            setDescription("تحديث التطبيق التلقائي")
+            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            setDestinationInExternalFilesDir(this@MainActivity, Environment.DIRECTORY_DOWNLOADS, "PoolAim-update.apk")
+            setMimeType("application/vnd.android.package-archive")
+        }
+
+        val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+        downloadId = dm.enqueue(request)
+        isDownloading = true
+        Toast.makeText(this, if (Lang.isAr(this)) "بدأ التنزيل التلقائي... سيفتح التثبيت فوراً" else "Downloading update automatically...", Toast.LENGTH_LONG).show()
+    }
 
     private fun styled(label: String, bg: Int, fg: Int, onClick: () -> Unit): Button =
         Button(this).apply {
@@ -156,10 +209,8 @@ class MainActivity : Activity() {
                         val installedSha = prefs.getString(PREF_LAST_SHA, null)
 
                         if (installedSha == null) {
-                            // التثبيت الأول يحفظ الـ SHA الحالي
                             prefs.edit().putString(PREF_LAST_SHA, latestSha).apply()
                         } else if (installedSha != latestSha) {
-                            // يوجد كود جديد في المستودع ويجب التحديث إجبارياً
                             runOnUiThread {
                                 isUpdateRequired = true
                                 val y = scroll?.scrollY ?: 0
@@ -168,9 +219,7 @@ class MainActivity : Activity() {
                         }
                     }
                 }
-            } catch (e: Exception) {
-                // في حالة انقطاع الإنترنت يستمر التطبيق بسلاسة
-            }
+            } catch (e: Exception) {}
         }
     }
 
@@ -262,7 +311,7 @@ class MainActivity : Activity() {
 
         val card = helpCard { sv.smoothScrollTo(0, 0) }
 
-        // كرت التحديث الإلزامي إذا وُجد تحديث جديد
+        // كرت التحديث التلقائي المباشر (دون مغادرة التطبيق ودون GitHub)
         if (isUpdateRequired) {
             val updateBox = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -275,22 +324,22 @@ class MainActivity : Activity() {
                 }
             }
             updateBox.addView(label(
-                if (isAr) "⚠️ يتوفر إصدار جديد للتطبيق!" else "⚠️ New version available!",
+                if (isAr) "⚠️ يتوفر تحديث جديد للتطبيق!" else "⚠️ New update available!",
                 16f, 0xFF38BDF8.toInt(), true, true
             ))
             updateBox.addView(label(
-                if (isAr) "يجب تحديث التطبيق أولاً لتشغيل العرض والاستمتاع بآخر التعديلات"
-                else "You must update the app to start overlay and get latest features",
+                if (isAr) "اضغط أدناه لتحديث التطبيق تلقائياً للمتابعة والاستمتاع بآخر التعديلات"
+                else "Tap below to update app automatically and get latest features",
                 12f, Color.WHITE, false, true
             ), LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(6)
             })
 
             val updateNowBtn = styled(
-                if (isAr) "تنزيل التحديث وتثبيته الآن 🚀" else "Download & Update Now 🚀",
+                if (isAr) "تحديث التطبيق تلقائياً الآن 🚀" else "Update Automatically Now 🚀",
                 0xFF10B981.toInt(), Color.WHITE
             ) {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(latestDownloadUrl)))
+                startDirectDownload()
             }
             updateBox.addView(updateNowBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(10)
@@ -303,7 +352,7 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }, lp())
 
-        // زر تشغيل العرض: مقفل تماماً إذا كان هناك تحديث إلزامي
+        // قفل زر التشغيل عند توفر تحديث
         val startBtnLabel = if (isUpdateRequired) {
             if (isAr) "🔒 قفل التشغيل (يجب التحديث أولاً)" else "🔒 Locked (Update required)"
         } else T("start")
@@ -315,8 +364,8 @@ class MainActivity : Activity() {
             if (isUpdateRequired) {
                 Toast.makeText(
                     this,
-                    if (isAr) "يوجد إصدار أحدث، يرجى الضغط على زر التحديث أعلاه!"
-                    else "A new update is available. Please update above to continue!",
+                    if (isAr) "يوجد تحديث أحدث، يرجى الضغط على زر التحديث التلقائي أعلاه!"
+                    else "A new update is available. Please tap update above!",
                     Toast.LENGTH_LONG
                 ).show()
                 return@styled
@@ -370,6 +419,11 @@ class MainActivity : Activity() {
 
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(onDownloadComplete, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(onDownloadComplete, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
+        }
         val y = getSharedPreferences(Lang.PREFS, MODE_PRIVATE).getInt("main_scroll", 0)
         build(y)
         checkForUpdates()
@@ -378,6 +432,11 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         checkForUpdates()
+    }
+
+    override fun onDestroy() {
+        runCatching { unregisterReceiver(onDownloadComplete) }
+        super.onDestroy()
     }
 
     override fun onPause() {
