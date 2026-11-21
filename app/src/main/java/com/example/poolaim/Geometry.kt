@@ -34,12 +34,12 @@ object Geometry {
     fun clamp(p: Pt, r: Box) = Pt(min(max(p.first, r.l), r.r), min(max(p.second, r.t), r.b))
 
     /**
-     * حساب ارتدادات الجدار:
-     * - الحفاظ الحرفي على المعامل المعتمد 0.982f لجميع الارتدادات لضمان الدقة الكاملة.
-     * - ضبط مسار الخط الثالث المنطلق من الارتداد المزدوج الركني ليمتد وينفرج
-     *   أفقياً نحو الجيب المقابل دون الانحراف عن مسار الكرة الفعلي.
+     * حساب ارتدادات الجدار بالفيزياء الديناميكية لقوة العصا:
+     * - قوة 5 تعادل المعامل المرجعي الأصلي 0.982f تماماً.
+     * - القوى من 1 إلى 4 تضيق الزاوية للعصيان الضعيفة.
+     * - القوى من 6 إلى 10 توسع زاوية الانفراج لمطابقة انضغاط المطاط للعصيان القوية.
      */
-    fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4): List<Pair<Pt, Pt>> {
+    fun bankSegments(start: Pt, dir: Pt, r: Box, maxBanks: Int = 4, cueForce: Int = 5): List<Pair<Pt, Pt>> {
         var vx = dir.first
         var vy = dir.second
         if (!vx.isFinite() || !vy.isFinite() || (vx == 0f && vy == 0f)) return emptyList()
@@ -58,7 +58,8 @@ object Geometry {
         var cy = start.second.coerceIn(boundT, boundB)
         val out = mutableListOf<Pair<Pt, Pt>>()
 
-        var prevAxis = ' '
+        // معامل ديناميكي: عند force=5 يكون 0.982f، وعند force=10 يصبح 1.01f
+        val forceCoeff = 0.982f + (cueForce.coerceIn(1, 10) - 5) * 0.0055f
 
         for (bankIndex in 0 until max(0, maxBanks)) {
             val cand = mutableListOf<Pair<Float, Char>>()
@@ -76,24 +77,12 @@ object Geometry {
             val hitY = cy + vy * t
             out.add(Pt(cx, cy) to Pt(hitX, hitY))
 
-            // هل هذا الارتداد هو الثاني المتتالي والمتعامد (من جدار رأسي إلى أفقي قرب الركن)؟
-            val isSecondPerpendicularRebound = (bankIndex == 1) && (prevAxis != ' ' && prevAxis != axis)
-
             if (axis == 'x') {
                 vx = -vx
-                if (isSecondPerpendicularRebound) {
-                    vy *= 1.035f
-                } else {
-                    vy *= 0.982f
-                }
+                vy *= forceCoeff
             } else {
                 vy = -vy
-                if (isSecondPerpendicularRebound) {
-                    // إعطاء الخط الثالث الانفراج الأفقي المطلوب لليمين ليطابق مسار الكرة الحقيقي
-                    vx *= 1.045f
-                } else {
-                    vx *= 0.982f
-                }
+                vx *= forceCoeff
             }
 
             val len = hypot(vx, vy)
@@ -102,7 +91,6 @@ object Geometry {
                 vy /= len
             }
 
-            prevAxis = axis
             cx = hitX
             cy = hitY
         }
