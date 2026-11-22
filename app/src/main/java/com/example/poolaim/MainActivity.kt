@@ -24,7 +24,6 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -119,37 +118,32 @@ class BannerView(ctx: Context) : View(ctx) {
             val dst = RectF(0f, imgTop, w, h)
             c.drawBitmap(bmp, null, dst, bmpPaint)
             val bg = lerp(topC, botC, imgTop / h)
-            val fadeH = 70 * d
+            val fadeH = w * 0.30f
             p.shader = LinearGradient(
                 0f, imgTop, 0f, imgTop + fadeH,
-                bg, Color.TRANSPARENT, Shader.TileMode.CLAMP
+                bg, (bg and 0x00FFFFFF), Shader.TileMode.CLAMP
             )
             c.drawRect(0f, imgTop, w, imgTop + fadeH, p)
             p.shader = null
         }
-
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 2 * d
-        p.color = Color.argb(120, 255, 210, 31)
-        c.drawRoundRect(RectF(1 * d, 1 * d, w - 1 * d, h - 1 * d), 24 * d, 24 * d, p)
         c.restore()
 
         p.style = Paint.Style.FILL
         p.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
-        p.textAlign = Paint.Align.CENTER
-        val cx = w / 2
-
-        p.color = Color.BLACK
-        p.textSize = 34 * d
-        c.drawText("Pool Aim", cx + 2 * d, 44 * d + 2 * d, p)
+        p.textAlign = Paint.Align.LEFT
+        p.textSize = 100f
+        val full = p.measureText("Pool Aim Shettos")
+        val size = min(100f * (w * 0.86f) / full, w * 0.11f)
+        p.textSize = size
+        val partA = "Pool Aim "
+        val wA = p.measureText(partA)
+        val wB = p.measureText("Shettos")
+        val x0 = (w - (wA + wB)) / 2f
+        val base = size * 1.25f + 6 * d
         p.color = Color.WHITE
-        c.drawText("Pool Aim", cx, 44 * d, p)
-
-        p.color = Color.BLACK
-        p.textSize = 32 * d
-        c.drawText("Shettos", cx + 2 * d, 82 * d + 2 * d, p)
+        c.drawText(partA, x0, base, p)
         p.color = gold
-        c.drawText("Shettos", cx, 82 * d, p)
+        c.drawText("Shettos", x0 + wA, base, p)
     }
 }
 
@@ -195,12 +189,11 @@ class MainActivity : Activity() {
     private var pendingStart = false
     private var pendingUpdate = false
     private var autoTried = false
-
-    private var statusView: TextView? = null
-    private var statusText: String? = null
     private var apkUrl: String? = null
+    private var statusText: String = ""
+    private var statusView: TextView? = null
 
-    private val REPO = "EmadShettos/Pool_Aim_Easy"
+    private val RELEASE_API = "https://api.github.com/repos/EmadShettos/Pool_Aim_Easy/releases/tags/latest"
     private val FALLBACK_APK = "https://github.com/EmadShettos/Pool_Aim_Easy/releases/download/latest/EmadShettos-PoolAim.apk"
     private val ACTION_INSTALL_RESULT = "com.example.poolaim.INSTALL_RESULT"
 
@@ -212,52 +205,45 @@ class MainActivity : Activity() {
     }
 
     private fun parseTime(s: String): Long {
-        val f = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("UTC")
-        }
+        val f = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+        f.timeZone = TimeZone.getTimeZone("UTC")
         return f.parse(s)?.time ?: 0L
     }
 
     private fun checkForUpdates() {
+        if (isDownloading || isInstalling) return
         thread {
             try {
-                val url = URL("https://api.github.com/repos/$REPO/releases/tags/latest")
-                val conn = (url.openConnection() as HttpURLConnection).apply {
+                val conn = (URL(RELEASE_API).openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     setRequestProperty("User-Agent", "PoolAimApp")
+                    setRequestProperty("Accept", "application/vnd.github+json")
                     connectTimeout = 6000
                     readTimeout = 6000
                 }
-                if (conn.responseCode == 200) {
-                    val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                    val json = JSONObject(resp)
-                    val assets = json.optJSONArray("assets")
-                    var assetTime = 0L
-                    var downloadLink: String? = null
-                    if (assets != null) {
-                        for (i in 0 until assets.length()) {
-                            val a = assets.getJSONObject(i)
-                            val name = a.optString("name", "")
-                            if (name.endsWith(".apk")) {
-                                downloadLink = a.optString("browser_download_url", null)
-                                assetTime = parseTime(a.optString("updated_at", a.optString("created_at", "")))
-                                break
-                            }
-                        }
+                if (conn.responseCode != 200) return@thread
+                val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                val assets = JSONObject(resp).getJSONArray("assets")
+                var url: String? = null
+                var assetTime = 0L
+                for (i in 0 until assets.length()) {
+                    val a = assets.getJSONObject(i)
+                    if (a.getString("name").endsWith(".apk")) {
+                        url = a.optString("browser_download_url", FALLBACK_APK)
+                        assetTime = parseTime(a.getString("updated_at"))
+                        break
                     }
-                    apkUrl = downloadLink ?: FALLBACK_APK
-
-                    val pi = packageManager.getPackageInfo(packageName, 0)
-                    val installTime = pi.lastUpdateTime
-                    val need = assetTime > installTime + 10_000L
-
-                    runOnUiThread {
-                        if (need != isUpdateRequired) {
-                            isUpdateRequired = need
-                            build(scroll?.scrollY ?: 0)
-                        }
+                }
+                if (url == null || assetTime == 0L) return@thread
+                val installedAt = packageManager.getPackageInfo(packageName, 0).lastUpdateTime
+                val need = assetTime > installedAt
+                apkUrl = url
+                runOnUiThread {
+                    if (need != isUpdateRequired) {
+                        isUpdateRequired = need
+                        if (need) statusText = if (ar()) "تم العثور على تحديث، جارٍ التجهيز..." else "Update found, preparing..."
+                        build(scroll?.scrollY ?: 0)
                     }
-
                     if (need && !autoTried) {
                         autoTried = true
                         startUpdateFlow()
@@ -317,9 +303,11 @@ class MainActivity : Activity() {
                 }
                 if (tmp.length() < 100_000L) throw Exception("file too small")
                 if (out.exists()) out.delete()
-                if (!tmp.renameTo(out)) throw Exception("rename failed")
-                isDownloading = false
-                installApk(out)
+                tmp.renameTo(out)
+                runOnUiThread {
+                    isDownloading = false
+                    installApk(out)
+                }
             } catch (e: Exception) {
                 isDownloading = false
                 setStatus(
@@ -424,13 +412,13 @@ class MainActivity : Activity() {
             "٢) افتح التطبيق واضغط زر تشغيل العرض (Start).\n" +
             "٣) في أول مرة سينقلك التطبيق إلى إعدادات \"الظهور فوق التطبيقات\". فعّل الإذن ثم ارجع للتطبيق.\n" +
             "٤) عند رجوعك تظهر القائمة العائمة تلقائياً.\n" +
-            "٥) التحديثات بعد ذلك تتم تلقائياً داخل التطبيق دون الحاجة لتنزيل يدوي."
+            "٥) عند صدور تحديث يظهر كرت التحديث ويبدأ التنزيل والتثبيت تلقائياً. إذا ظهرت نافذة تأكيد التثبيت فاضغط تثبيت."
         } else {
             "1) Open the APK and allow installing from this source if asked.\n" +
             "2) Open the app and tap Start.\n" +
             "3) The first time, the app opens the \"Display over other apps\" settings. Enable it and come back.\n" +
             "4) When you return, the floating menu starts automatically.\n" +
-            "5) Future updates download and install automatically inside the app."
+            "5) When an update is released, the update card appears and download/install starts automatically. If an install confirmation appears, tap Install."
         }
         card.addView(label(installText, 13f, soft, false, false),
             LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(6) })
@@ -460,23 +448,6 @@ class MainActivity : Activity() {
         card.addView(styled(T("back_top"), 0xFF0B0B0B.toInt(), gold) { onTop() },
             LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(18) })
         return card
-    }
-
-    private fun openWhatsApp() {
-        val uri = Uri.parse("https://wa.me/201093532277")
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage("com.whatsapp"))
-        } catch (e: Exception) {
-            try {
-                startActivity(Intent(Intent.ACTION_VIEW, uri))
-            } catch (e2: Exception) {
-                Toast.makeText(
-                    this,
-                    if (Lang.isAr(this)) "تعذر فتح واتساب" else "Could not open WhatsApp",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
     }
 
     private fun switchLang(ar: Boolean) {
@@ -524,6 +495,7 @@ class MainActivity : Activity() {
 
         val card = helpCard { sv.smoothScrollTo(0, 0) }
 
+        statusView = null
         if (isUpdateRequired) {
             val updateBox = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -540,7 +512,8 @@ class MainActivity : Activity() {
                 16f, 0xFF38BDF8.toInt(), true, true
             ))
             val st = label(
-                statusText ?: (if (isAr) "جارٍ التحديث تلقائياً..." else "Updating automatically..."),
+                if (statusText.isNotEmpty()) statusText
+                else if (isAr) "جارٍ التجهيز..." else "Preparing...",
                 12f, Color.WHITE, false, true
             )
             statusView = st
@@ -548,11 +521,11 @@ class MainActivity : Activity() {
                 topMargin = dp(6)
             })
 
-            val retryBtn = styled(
-                if (isAr) "إعادة المحاولة / التحديث الآن 🚀" else "Retry / Update now 🚀",
+            val updateNowBtn = styled(
+                if (isAr) "إعادة المحاولة / تحديث الآن 🚀" else "Retry / Update now 🚀",
                 0xFF10B981.toInt(), Color.WHITE
             ) { startUpdateFlow() }
-            updateBox.addView(retryBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            updateBox.addView(updateNowBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(10)
             })
 
@@ -574,8 +547,8 @@ class MainActivity : Activity() {
             if (isUpdateRequired) {
                 Toast.makeText(
                     this,
-                    if (isAr) "يوجد تحديث أحدث، يرجى إتمام التحديث أعلاه!"
-                    else "A new update is available. Please complete update above!",
+                    if (isAr) "جارٍ التحديث، انتظر اكتمال التثبيت"
+                    else "Updating, please wait for the install to finish",
                     Toast.LENGTH_LONG
                 ).show()
                 return@styled
@@ -600,7 +573,7 @@ class MainActivity : Activity() {
         val strip = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(64), dp(10), dp(64), dp(10))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
             background = GradientDrawable().apply {
                 setColor(0xFF0B0B0B.toInt())
                 cornerRadius = dp(14).toFloat()
@@ -612,35 +585,7 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(8) })
-
-        val goBtn = Button(this).apply {
-            text = if (isAr) "اذهب" else "Go"
-            isAllCaps = false
-            textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.BLACK)
-            minWidth = 0
-            minHeight = 0
-            minimumWidth = 0
-            minimumHeight = 0
-            setPadding(0, 0, 0, 0)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(gold)
-                setStroke(dp(2), Color.WHITE)
-            }
-            setOnClickListener { openWhatsApp() }
-        }
-        val stripFrame = FrameLayout(this)
-        stripFrame.addView(strip, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
-        ))
-        stripFrame.addView(goBtn, FrameLayout.LayoutParams(dp(52), dp(52)).apply {
-            gravity = Gravity.CENTER_VERTICAL or (if (isAr) Gravity.LEFT else Gravity.RIGHT)
-            leftMargin = dp(10)
-            rightMargin = dp(10)
-        })
-        root.addView(stripFrame, LinearLayout.LayoutParams(
+        root.addView(strip, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(14) })
 
@@ -689,10 +634,5 @@ class MainActivity : Activity() {
             getSharedPreferences(Lang.PREFS, MODE_PRIVATE).edit().putInt("main_scroll", it.scrollY).apply()
         }
         super.onPause()
-    }
-
-    override fun onDestroy() {
-        if (instance === this) instance = null
-        super.onDestroy()
     }
 }
