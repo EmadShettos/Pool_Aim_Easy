@@ -69,18 +69,6 @@ class InstallResultReceiver : BroadcastReceiver() {
     }
 }
 
-class AppUpdateReceiver : BroadcastReceiver() {
-    override fun onReceive(ctx: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
-            val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
-            if (launch != null) {
-                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                ctx.startActivity(launch)
-            }
-        }
-    }
-}
-
 class BannerView(ctx: Context) : View(ctx) {
     private val d = resources.displayMetrics.density
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
