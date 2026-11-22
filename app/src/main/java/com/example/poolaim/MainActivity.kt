@@ -51,10 +51,31 @@ class InstallResultReceiver : BroadcastReceiver() {
                     ctx.startActivity(confirm)
                 }
             }
-            PackageInstaller.STATUS_SUCCESS -> {}
+            PackageInstaller.STATUS_SUCCESS -> {
+                // إعادة فتح التطبيق تلقائياً وبسرعة فور انتهاء التثبيت
+                try {
+                    val launchIntent = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)?.apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    }
+                    if (launchIntent != null) ctx.startActivity(launchIntent)
+                } catch (e: Exception) {}
+            }
             else -> {
                 val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
-                Toast.makeText(ctx, "Update install failed: $msg", Toast.LENGTH_LONG).show()
+                // إذا أوقف Play Protect التثبيت أو تم الإلغاء، نفتح شاشة التثبيت العادية القياسية مباشرة
+                if (msg.contains("ABORTED", ignoreCase = true) || msg.contains("FAILED", ignoreCase = true)) {
+                    val updateFile = File(ctx.cacheDir, "update.apk")
+                    if (updateFile.exists()) {
+                        try {
+                            val uri = Uri.parse("content://${ctx.packageName}.fileprovider/update.apk")
+                            val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(Uri.fromFile(updateFile), "application/vnd.android.package-archive")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            ctx.startActivity(fallbackIntent)
+                        } catch (e: Exception) {}
+                    }
+                }
             }
         }
     }
