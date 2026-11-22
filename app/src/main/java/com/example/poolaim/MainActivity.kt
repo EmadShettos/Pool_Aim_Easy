@@ -1,12 +1,10 @@
 package com.example.poolaim
 
 import android.app.Activity
-import android.app.DownloadManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageInstaller
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -22,7 +20,6 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -41,70 +38,92 @@ import java.util.TimeZone
 import kotlin.concurrent.thread
 import kotlin.math.min
 
+class InstallResultReceiver : BroadcastReceiver() {
+    override fun onReceive(ctx: Context, intent: Intent) {
+        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        when (status) {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                @Suppress("DEPRECATION")
+                val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                if (confirm != null) {
+                    confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ctx.startActivity(confirm)
+                }
+            }
+            PackageInstaller.STATUS_SUCCESS -> {}
+            else -> {
+                val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
+                Toast.makeText(ctx, "Update install failed: $msg", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+}
+
 class BannerView(ctx: Context) : View(ctx) {
     private val d = resources.displayMetrics.density
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val bmpPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val gold = 0xFFFFD21F.toInt()
-    private val panelTop = 0xFF12894B.toInt()
-    private val panelBottom = 0xFF0A3A22.toInt()
+    private val topC = 0xFF12894B.toInt()
+    private val botC = 0xFF05301B.toInt()
     private val logo: Bitmap? by lazy {
         val id = resources.getIdentifier("pool_aim_icon", "drawable", context.packageName)
-        if (id != 0) {
-            val o = BitmapFactory.Options().apply { inScaled = false }
-            BitmapFactory.decodeResource(resources, id, o)
-        } else null
+        if (id != 0) BitmapFactory.decodeResource(resources, id) else null
     }
 
-    private fun fit(text: String, maxW: Float, maxH: Float): Float {
-        p.textSize = 100f
-        val w = p.measureText(text)
-        return min(100f * maxW / w, maxH)
+    private fun lerp(a: Int, b: Int, t: Float): Int {
+        val k = t.coerceIn(0f, 1f)
+        val r = (Color.red(a) + (Color.red(b) - Color.red(a)) * k).toInt()
+        val g = (Color.green(a) + (Color.green(b) - Color.green(a)) * k).toInt()
+        val bl = (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * k).toInt()
+        return Color.rgb(r, g, bl)
     }
 
     override fun onDraw(c: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        val size = min(w, h - 110 * d)
-        val imgTop = h - size
-        val left = (w - size) / 2f
-
-        val clip = Path().apply { addRoundRect(RectF(0f, 0f, w, h), 24 * d, 24 * d, Path.Direction.CW) }
+        val r = RectF(0f, 0f, w, h)
+        val clip = Path().apply { addRoundRect(r, 24 * d, 24 * d, Path.Direction.CW) }
         c.save()
         c.clipPath(clip)
 
         p.style = Paint.Style.FILL
-        p.shader = LinearGradient(0f, 0f, 0f, imgTop, panelTop, panelBottom, Shader.TileMode.CLAMP)
-        c.drawRect(0f, 0f, w, h, p)
+        p.shader = LinearGradient(0f, 0f, 0f, h, topC, botC, Shader.TileMode.CLAMP)
+        c.drawRect(r, p)
         p.shader = null
 
         val bmp = logo
+        val imgTop = h - w
         if (bmp != null) {
-            val dst = RectF(left, imgTop, left + size, imgTop + size)
+            val dst = RectF(0f, imgTop, w, h)
             c.drawBitmap(bmp, null, dst, bmpPaint)
-            val fadeH = size * 0.22f
+            val bg = lerp(topC, botC, imgTop / h)
+            val fadeH = w * 0.30f
             p.shader = LinearGradient(
                 0f, imgTop, 0f, imgTop + fadeH,
-                panelBottom, (panelBottom and 0x00FFFFFF), Shader.TileMode.CLAMP
+                bg, (bg and 0x00FFFFFF), Shader.TileMode.CLAMP
             )
-            c.drawRect(left, imgTop, left + size, imgTop + fadeH, p)
+            c.drawRect(0f, imgTop, w, imgTop + fadeH, p)
             p.shader = null
         }
+        c.restore()
 
         p.style = Paint.Style.FILL
         p.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
-        p.textAlign = Paint.Align.CENTER
-        p.setShadowLayer(4 * d, 0f, 2 * d, Color.argb(160, 0, 0, 0))
-        val cx = w / 2
+        p.textAlign = Paint.Align.LEFT
+        p.textSize = 100f
+        val full = p.measureText("Pool Aim Shettos")
+        val size = min(100f * (w * 0.86f) / full, w * 0.11f)
+        p.textSize = size
+        val partA = "Pool Aim "
+        val wA = p.measureText(partA)
+        val wB = p.measureText("Shettos")
+        val x0 = (w - (wA + wB)) / 2f
+        val base = size * 1.25f + 6 * d
         p.color = Color.WHITE
-        p.textSize = fit("Pool Aim", w * 0.72f, imgTop * 0.34f)
-        c.drawText("Pool Aim", cx, imgTop * 0.46f, p)
+        c.drawText(partA, x0, base, p)
         p.color = gold
-        p.textSize = fit("Shettos", w * 0.6f, imgTop * 0.34f)
-        c.drawText("Shettos", cx, imgTop * 0.88f, p)
-        p.clearShadowLayer()
-
-        c.restore()
+        c.drawText("Shettos", x0 + wA, base, p)
     }
 }
 
@@ -118,159 +137,168 @@ class MainActivity : Activity() {
     private var isDownloading = false
     private var isInstalling = false
     private var pendingStart = false
-    private var pendingInstallFile: File? = null
-    private var assetUpdatedAt: String? = null
-    private var assetUrl: String = ""
-    private var downloadId: Long = -1L
+    private var pendingUpdate = false
+    private var autoTried = false
+    private var apkUrl: String? = null
+    private var statusText: String = ""
+    private var statusView: TextView? = null
 
-    private val REPO = "EmadShettos/Pool_Aim_Easy"
-    private val APK_URL = "https://github.com/EmadShettos/Pool_Aim_Easy/releases/download/latest/EmadShettos-PoolAim.apk"
-    private val APK_FILE_NAME = "PoolAim-update.apk"
-    private val PREF_AUTO_DL = "auto_dl_for"
-    private val ACTION_INSTALL_STATUS = "com.example.poolaim.INSTALL_STATUS"
+    private val RELEASE_API = "https://api.github.com/repos/EmadShettos/Pool_Aim_Easy/releases/tags/latest"
+    private val FALLBACK_APK = "https://github.com/EmadShettos/Pool_Aim_Easy/releases/download/latest/EmadShettos-PoolAim.apk"
+    private val ACTION_INSTALL_RESULT = "com.example.poolaim.INSTALL_RESULT"
 
-    private fun updateFile(): File =
-        File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), APK_FILE_NAME)
+    private fun ar() = Lang.isAr(this)
 
-    private fun refreshUi() {
-        runOnUiThread { build(scroll?.scrollY ?: 0) }
+    private fun setStatus(s: String) {
+        statusText = s
+        runOnUiThread { statusView?.text = s }
     }
 
-    @Suppress("DEPRECATION")
-    private fun confirmIntentOf(i: Intent): Intent? =
-        if (Build.VERSION.SDK_INT >= 33) i.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
-        else i.getParcelableExtra(Intent.EXTRA_INTENT)
-
-    private val onDownloadComplete = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
-            if (id != downloadId) return
-            isDownloading = false
-            val f = updateFile()
-            if (f.exists() && f.length() > 0) {
-                beginInstall(f)
-            } else {
-                Toast.makeText(
-                    this@MainActivity,
-                    if (Lang.isAr(this@MainActivity)) "فشل تنزيل التحديث" else "Update download failed",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-            refreshUi()
-        }
+    private fun parseTime(s: String): Long {
+        val f = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+        f.timeZone = TimeZone.getTimeZone("UTC")
+        return f.parse(s)?.time ?: 0L
     }
 
-    private val installStatusReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
-                PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                    val confirm = confirmIntentOf(intent)
-                    if (confirm != null) {
-                        confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(confirm)
+    private fun checkForUpdates() {
+        if (isDownloading || isInstalling) return
+        thread {
+            try {
+                val conn = (URL(RELEASE_API).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    setRequestProperty("User-Agent", "PoolAimApp")
+                    setRequestProperty("Accept", "application/vnd.github+json")
+                    connectTimeout = 6000
+                    readTimeout = 6000
+                }
+                if (conn.responseCode != 200) return@thread
+                val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                val assets = JSONObject(resp).getJSONArray("assets")
+                var url: String? = null
+                var assetTime = 0L
+                for (i in 0 until assets.length()) {
+                    val a = assets.getJSONObject(i)
+                    if (a.getString("name").endsWith(".apk")) {
+                        url = a.optString("browser_download_url", FALLBACK_APK)
+                        assetTime = parseTime(a.getString("updated_at"))
+                        break
                     }
                 }
-                PackageInstaller.STATUS_SUCCESS -> {}
-                else -> {
-                    isInstalling = false
-                    val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
-                    Toast.makeText(
-                        this@MainActivity,
-                        (if (Lang.isAr(this@MainActivity)) "تعذر التثبيت: " else "Install failed: ") + msg,
-                        Toast.LENGTH_LONG
-                    ).show()
-                    refreshUi()
+                if (url == null || assetTime == 0L) return@thread
+                val installedAt = packageManager.getPackageInfo(packageName, 0).lastUpdateTime
+                val need = assetTime > installedAt
+                apkUrl = url
+                runOnUiThread {
+                    if (need != isUpdateRequired) {
+                        isUpdateRequired = need
+                        if (need) statusText = if (ar()) "تم العثور على تحديث، جارٍ التجهيز..." else "Update found, preparing..."
+                        build(scroll?.scrollY ?: 0)
+                    }
+                    if (need && !autoTried) {
+                        autoTried = true
+                        startUpdateFlow()
+                    }
                 }
-            }
+            } catch (e: Exception) {}
         }
     }
 
-    private fun beginInstall(file: File) {
-        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
-            pendingInstallFile = file
+    private fun startUpdateFlow() {
+        if (isDownloading || isInstalling) return
+        if (!packageManager.canRequestPackageInstalls()) {
+            pendingUpdate = true
             Toast.makeText(
                 this,
-                if (Lang.isAr(this)) "فعّل السماح بتثبيت التطبيقات لهذا التطبيق ثم ارجع" else "Allow installing apps for this app, then come back",
+                if (ar()) "فعّل \"السماح بتثبيت التطبيقات\" لهذا التطبيق ثم ارجع" else "Allow \"Install unknown apps\" for this app, then come back",
                 Toast.LENGTH_LONG
             ).show()
             startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
             return
         }
-        isInstalling = true
-        try {
-            sessionInstall(file)
-        } catch (e: Exception) {
-            isInstalling = false
-            fallbackInstall()
+        isDownloading = true
+        setStatus(if (ar()) "جارٍ تنزيل التحديث... 0%" else "Downloading update... 0%")
+        val link = apkUrl ?: FALLBACK_APK
+        thread {
+            try {
+                val out = File(cacheDir, "update.apk")
+                val tmp = File(cacheDir, "update.apk.part")
+                if (tmp.exists()) tmp.delete()
+                val conn = (URL(link).openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "PoolAimApp")
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                }
+                if (conn.responseCode != 200) throw Exception("HTTP ${conn.responseCode}")
+                val total = conn.contentLengthLong
+                var done = 0L
+                var lastPct = -1
+                conn.inputStream.use { input ->
+                    tmp.outputStream().use { os ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            os.write(buf, 0, n)
+                            done += n
+                            if (total > 0) {
+                                val pct = (done * 100 / total).toInt()
+                                if (pct != lastPct) {
+                                    lastPct = pct
+                                    setStatus(if (ar()) "جارٍ تنزيل التحديث... $pct%" else "Downloading update... $pct%")
+                                }
+                            }
+                        }
+                    }
+                }
+                if (tmp.length() < 100_000L) throw Exception("file too small")
+                if (out.exists()) out.delete()
+                tmp.renameTo(out)
+                runOnUiThread {
+                    isDownloading = false
+                    installApk(out)
+                }
+            } catch (e: Exception) {
+                isDownloading = false
+                setStatus(
+                    if (ar()) "فشل التنزيل، اضغط الزر للمحاولة مرة أخرى"
+                    else "Download failed, tap the button to retry"
+                )
+            }
         }
-        refreshUi()
     }
 
-    private fun sessionInstall(file: File) {
-        val installer = packageManager.packageInstaller
-        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-        if (Build.VERSION.SDK_INT >= 31) {
-            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-        }
-        val sid = installer.createSession(params)
-        val session = installer.openSession(sid)
+    private fun installApk(file: File) {
         try {
-            session.openWrite("base.apk", 0, file.length()).use { out ->
-                file.inputStream().use { it.copyTo(out) }
-                session.fsync(out)
+            isInstalling = true
+            setStatus(if (ar()) "جارٍ التثبيت..." else "Installing...")
+            val pi = packageManager.packageInstaller
+            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+            params.setAppPackageName(packageName)
+            if (Build.VERSION.SDK_INT >= 31) {
+                params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
             }
-            val intent = Intent(ACTION_INSTALL_STATUS).setPackage(packageName)
+            val id = pi.createSession(params)
+            val session = pi.openSession(id)
+            file.inputStream().use { ins ->
+                session.openWrite("update.apk", 0, file.length()).use { os ->
+                    ins.copyTo(os)
+                    session.fsync(os)
+                }
+            }
+            val intent = Intent(this, InstallResultReceiver::class.java).setAction(ACTION_INSTALL_RESULT)
             val flags = PendingIntent.FLAG_UPDATE_CURRENT or
                 (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
-            val pending = PendingIntent.getBroadcast(this, 0, intent, flags)
+            val pending = PendingIntent.getBroadcast(this, id, intent, flags)
             session.commit(pending.intentSender)
-        } finally {
             session.close()
-        }
-    }
-
-    private fun fallbackInstall() {
-        try {
-            val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-            val fileUri = dm.getUriForDownloadedFile(downloadId)
-            if (fileUri == null) {
-                Toast.makeText(this, if (Lang.isAr(this)) "تعذر فتح ملف التثبيت" else "Could not open the installer", Toast.LENGTH_LONG).show()
-                return
-            }
-            val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(fileUri, "application/vnd.android.package-archive")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            }
-            startActivity(installIntent)
         } catch (e: Exception) {
-            Toast.makeText(this, "تعذر فتح ملف التثبيت: ${e.message}", Toast.LENGTH_LONG).show()
+            isInstalling = false
+            setStatus(
+                if (ar()) "تعذر التثبيت، اضغط الزر للمحاولة مرة أخرى"
+                else "Install failed, tap the button to retry"
+            )
         }
-    }
-
-    private fun startDirectDownload() {
-        if (isDownloading || isInstalling) return
-        runCatching { updateFile().delete() }
-        val url = if (assetUrl.isNotEmpty()) assetUrl else APK_URL
-        val request = DownloadManager.Request(Uri.parse(url)).apply {
-            setTitle("Pool Aim Shettos Update")
-            setDescription("تحديث التطبيق")
-            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            setDestinationInExternalFilesDir(this@MainActivity, Environment.DIRECTORY_DOWNLOADS, APK_FILE_NAME)
-            setMimeType("application/vnd.android.package-archive")
-        }
-        val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
-        downloadId = dm.enqueue(request)
-        isDownloading = true
-        refreshUi()
-    }
-
-    private fun maybeAutoDownload() {
-        val key = assetUpdatedAt ?: return
-        val prefs = getSharedPreferences(Lang.PREFS, MODE_PRIVATE)
-        if (isDownloading || isInstalling) return
-        if (prefs.getString(PREF_AUTO_DL, null) == key) return
-        prefs.edit().putString(PREF_AUTO_DL, key).apply()
-        startDirectDownload()
     }
 
     private fun styled(label: String, bg: Int, fg: Int, onClick: () -> Unit): Button =
@@ -301,49 +329,6 @@ class MainActivity : Activity() {
             if (bold) typeface = Typeface.DEFAULT_BOLD
             if (center) gravity = Gravity.CENTER
         }
-
-    private fun checkForUpdates() {
-        thread {
-            try {
-                val url = URL("https://api.github.com/repos/$REPO/releases/tags/latest")
-                val conn = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    setRequestProperty("User-Agent", "PoolAimApp")
-                    setRequestProperty("Accept", "application/vnd.github+json")
-                    connectTimeout = 5000
-                    readTimeout = 5000
-                }
-                if (conn.responseCode != 200) return@thread
-                val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                val assets = JSONObject(resp).getJSONArray("assets")
-                var updated: String? = null
-                var dl: String? = null
-                for (i in 0 until assets.length()) {
-                    val a = assets.getJSONObject(i)
-                    if (a.getString("name").endsWith(".apk")) {
-                        updated = a.getString("updated_at")
-                        dl = a.getString("browser_download_url")
-                        break
-                    }
-                }
-                if (updated == null || dl == null) return@thread
-                val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-                fmt.timeZone = TimeZone.getTimeZone("UTC")
-                val assetTime = fmt.parse(updated)?.time ?: return@thread
-                val installedTime = packageManager.getPackageInfo(packageName, 0).lastUpdateTime
-                val need = assetTime > installedTime
-                assetUpdatedAt = updated
-                assetUrl = dl
-                runOnUiThread {
-                    if (need != isUpdateRequired) {
-                        isUpdateRequired = need
-                        build(scroll?.scrollY ?: 0)
-                    }
-                    if (need) maybeAutoDownload()
-                }
-            } catch (e: Exception) {}
-        }
-    }
 
     private fun launchOverlay() {
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 1)
@@ -377,13 +362,13 @@ class MainActivity : Activity() {
             "٢) افتح التطبيق واضغط زر تشغيل العرض (Start).\n" +
             "٣) في أول مرة سينقلك التطبيق إلى إعدادات \"الظهور فوق التطبيقات\". فعّل الإذن ثم ارجع للتطبيق.\n" +
             "٤) عند رجوعك تظهر القائمة العائمة تلقائياً.\n" +
-            "٥) عند صدور تحديث يبدأ التنزيل تلقائياً عند فتح التطبيق، ثم أكّد التثبيت إذا طلب الهاتف ذلك."
+            "٥) عند صدور تحديث يظهر كرت التحديث ويبدأ التنزيل والتثبيت تلقائياً. إذا ظهرت نافذة تأكيد التثبيت فاضغط تثبيت."
         } else {
             "1) Open the APK and allow installing from this source if asked.\n" +
             "2) Open the app and tap Start.\n" +
             "3) The first time, the app opens the \"Display over other apps\" settings. Enable it and come back.\n" +
             "4) When you return, the floating menu starts automatically.\n" +
-            "5) When an update is released, it downloads automatically when you open the app. Confirm the install if your phone asks."
+            "5) When an update is released, the update card appears and download/install starts automatically. If an install confirmation appears, tap Install."
         }
         card.addView(label(installText, 13f, soft, false, false),
             LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(6) })
@@ -460,6 +445,7 @@ class MainActivity : Activity() {
 
         val card = helpCard { sv.smoothScrollTo(0, 0) }
 
+        statusView = null
         if (isUpdateRequired) {
             val updateBox = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -471,29 +457,27 @@ class MainActivity : Activity() {
                     setStroke(dp(2), 0xFF38BDF8.toInt())
                 }
             }
-            val title = when {
-                isInstalling -> if (isAr) "⚙️ جاري تثبيت التحديث..." else "⚙️ Installing update..."
-                isDownloading -> if (isAr) "⬇️ جاري تنزيل التحديث تلقائياً..." else "⬇️ Downloading update automatically..."
-                else -> if (isAr) "⚠️ يتوفر تحديث جديد للتطبيق!" else "⚠️ New update available!"
-            }
-            updateBox.addView(label(title, 16f, 0xFF38BDF8.toInt(), true, true))
             updateBox.addView(label(
-                if (isAr) "إذا ظهرت نافذة تأكيد التثبيت فاضغط تثبيت"
-                else "If an install prompt appears, tap Install",
+                if (isAr) "⚠️ يتوفر تحديث جديد للتطبيق!" else "⚠️ New update available!",
+                16f, 0xFF38BDF8.toInt(), true, true
+            ))
+            val st = label(
+                if (statusText.isNotEmpty()) statusText
+                else if (isAr) "جارٍ التجهيز..." else "Preparing...",
                 12f, Color.WHITE, false, true
-            ), LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            )
+            statusView = st
+            updateBox.addView(st, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(6)
             })
 
-            if (!isDownloading && !isInstalling) {
-                val updateNowBtn = styled(
-                    if (isAr) "تنزيل التحديث وتثبيته 🚀" else "Download & Install Update 🚀",
-                    0xFF10B981.toInt(), Color.WHITE
-                ) { startDirectDownload() }
-                updateBox.addView(updateNowBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                    topMargin = dp(10)
-                })
-            }
+            val updateNowBtn = styled(
+                if (isAr) "إعادة المحاولة / تحديث الآن 🚀" else "Retry / Update now 🚀",
+                0xFF10B981.toInt(), Color.WHITE
+            ) { startUpdateFlow() }
+            updateBox.addView(updateNowBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(10)
+            })
 
             root.addView(updateBox, lp())
         }
@@ -513,8 +497,8 @@ class MainActivity : Activity() {
             if (isUpdateRequired) {
                 Toast.makeText(
                     this,
-                    if (isAr) "يوجد تحديث أحدث، يتم تنزيله وتثبيته الآن"
-                    else "A new update is available. It is being installed now",
+                    if (isAr) "جارٍ التحديث، انتظر اكتمال التثبيت"
+                    else "Updating, please wait for the install to finish",
                     Toast.LENGTH_LONG
                 ).show()
                 return@styled
@@ -555,12 +539,13 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(14) })
 
-        val dm = resources.displayMetrics
-        val side = min(dm.widthPixels - dp(32), (dm.heightPixels * 0.8f).toInt())
-        val bannerH = side + dp(120)
-        root.addView(BannerView(this), LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, bannerH
-        ).apply { topMargin = dp(12) })
+        val bannerW = resources.displayMetrics.widthPixels - dp(12)
+        val bannerH = (bannerW * 1.16f).toInt()
+        root.addView(BannerView(this), LinearLayout.LayoutParams(bannerW, bannerH).apply {
+            topMargin = dp(12)
+            leftMargin = -dp(10)
+            rightMargin = -dp(10)
+        })
 
         root.addView(card, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -571,18 +556,8 @@ class MainActivity : Activity() {
         sv.post { sv.scrollTo(0, restoreY) }
     }
 
-    private fun registerCompat(r: BroadcastReceiver, f: IntentFilter) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(r, f, RECEIVER_EXPORTED)
-        } else {
-            registerReceiver(r, f)
-        }
-    }
-
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
-        registerCompat(onDownloadComplete, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
-        registerCompat(installStatusReceiver, IntentFilter(ACTION_INSTALL_STATUS))
         val y = getSharedPreferences(Lang.PREFS, MODE_PRIVATE).getInt("main_scroll", 0)
         build(y)
         checkForUpdates()
@@ -596,18 +571,11 @@ class MainActivity : Activity() {
                 launchOverlay()
             }
         }
-        val f = pendingInstallFile
-        if (f != null && Build.VERSION.SDK_INT >= 26 && packageManager.canRequestPackageInstalls()) {
-            pendingInstallFile = null
-            beginInstall(f)
+        if (pendingUpdate && packageManager.canRequestPackageInstalls()) {
+            pendingUpdate = false
+            startUpdateFlow()
         }
         checkForUpdates()
-    }
-
-    override fun onDestroy() {
-        runCatching { unregisterReceiver(onDownloadComplete) }
-        runCatching { unregisterReceiver(installStatusReceiver) }
-        super.onDestroy()
     }
 
     override fun onPause() {
