@@ -52,30 +52,29 @@ class InstallResultReceiver : BroadcastReceiver() {
                 }
             }
             PackageInstaller.STATUS_SUCCESS -> {
-                // إعادة فتح التطبيق تلقائياً وبسرعة فور انتهاء التثبيت
-                try {
-                    val launchIntent = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)?.apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                    }
-                    if (launchIntent != null) ctx.startActivity(launchIntent)
-                } catch (e: Exception) {}
+                val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
+                if (launch != null) {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    ctx.startActivity(launch)
+                }
             }
             else -> {
                 val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
-                // إذا أوقف Play Protect التثبيت أو تم الإلغاء، نفتح شاشة التثبيت العادية القياسية مباشرة
-                if (msg.contains("ABORTED", ignoreCase = true) || msg.contains("FAILED", ignoreCase = true)) {
-                    val updateFile = File(ctx.cacheDir, "update.apk")
-                    if (updateFile.exists()) {
-                        try {
-                            val uri = Uri.parse("content://${ctx.packageName}.fileprovider/update.apk")
-                            val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(Uri.fromFile(updateFile), "application/vnd.android.package-archive")
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            ctx.startActivity(fallbackIntent)
-                        } catch (e: Exception) {}
-                    }
+                MainActivity.instance?.runOnUiThread {
+                    MainActivity.instance?.onInstallError(msg)
                 }
+            }
+        }
+    }
+}
+
+class AppUpdateReceiver : BroadcastReceiver() {
+    override fun onReceive(ctx: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
+            if (launch != null) {
+                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                ctx.startActivity(launch)
             }
         }
     }
@@ -120,36 +119,71 @@ class BannerView(ctx: Context) : View(ctx) {
             val dst = RectF(0f, imgTop, w, h)
             c.drawBitmap(bmp, null, dst, bmpPaint)
             val bg = lerp(topC, botC, imgTop / h)
-            val fadeH = w * 0.30f
+            val fadeH = 70 * d
             p.shader = LinearGradient(
                 0f, imgTop, 0f, imgTop + fadeH,
-                bg, (bg and 0x00FFFFFF), Shader.TileMode.CLAMP
+                bg, Color.TRANSPARENT, Shader.TileMode.CLAMP
             )
             c.drawRect(0f, imgTop, w, imgTop + fadeH, p)
             p.shader = null
         }
+
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 2 * d
+        p.color = Color.argb(120, 255, 210, 31)
+        c.drawRoundRect(RectF(1 * d, 1 * d, w - 1 * d, h - 1 * d), 24 * d, 24 * d, p)
         c.restore()
 
         p.style = Paint.Style.FILL
         p.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
-        p.textAlign = Paint.Align.LEFT
-        p.textSize = 100f
-        val full = p.measureText("Pool Aim Shettos")
-        val size = min(100f * (w * 0.86f) / full, w * 0.11f)
-        p.textSize = size
-        val partA = "Pool Aim "
-        val wA = p.measureText(partA)
-        val wB = p.measureText("Shettos")
-        val x0 = (w - (wA + wB)) / 2f
-        val base = size * 1.25f + 6 * d
+        p.textAlign = Paint.Align.CENTER
+        val cx = w / 2
+
+        p.color = Color.BLACK
+        p.textSize = 34 * d
+        c.drawText("Pool Aim", cx + 2 * d, 44 * d + 2 * d, p)
         p.color = Color.WHITE
-        c.drawText(partA, x0, base, p)
+        c.drawText("Pool Aim", cx, 44 * d, p)
+
+        p.color = Color.BLACK
+        p.textSize = 32 * d
+        c.drawText("Shettos", cx + 2 * d, 82 * d + 2 * d, p)
         p.color = gold
-        c.drawText("Shettos", x0 + wA, base, p)
+        c.drawText("Shettos", cx, 82 * d, p)
     }
 }
 
 class MainActivity : Activity() {
+    companion object {
+        var instance: MainActivity? = null
+    }
+
+    fun onInstallError(msg: String) {
+        isInstalling = false
+        val f = File(cacheDir, "update.apk")
+        if (f.exists()) {
+            setStatus(if (ar()) "جارٍ فتح التثبيت..." else "Opening installer...")
+            installFallback(f)
+        } else {
+            setStatus(if (ar()) "فشل التثبيت: $msg" else "Install failed: $msg")
+        }
+    }
+
+    private fun installFallback(file: File) {
+        try {
+            val builder = android.os.StrictMode.VmPolicy.Builder()
+            android.os.StrictMode.setVmPolicy(builder.build())
+            val uri = Uri.fromFile(file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            setStatus(if (ar()) "تعذر فتح التثبيت: ${e.message}" else "Could not open installer: ${e.message}")
+        }
+    }
+
     private val gold = 0xFFFFD21F.toInt()
     private var scroll: ScrollView? = null
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -161,11 +195,12 @@ class MainActivity : Activity() {
     private var pendingStart = false
     private var pendingUpdate = false
     private var autoTried = false
-    private var apkUrl: String? = null
-    private var statusText: String = ""
-    private var statusView: TextView? = null
 
-    private val RELEASE_API = "https://api.github.com/repos/EmadShettos/Pool_Aim_Easy/releases/tags/latest"
+    private var statusView: TextView? = null
+    private var statusText: String? = null
+    private var apkUrl: String? = null
+
+    private val REPO = "EmadShettos/Pool_Aim_Easy"
     private val FALLBACK_APK = "https://github.com/EmadShettos/Pool_Aim_Easy/releases/download/latest/EmadShettos-PoolAim.apk"
     private val ACTION_INSTALL_RESULT = "com.example.poolaim.INSTALL_RESULT"
 
@@ -177,45 +212,52 @@ class MainActivity : Activity() {
     }
 
     private fun parseTime(s: String): Long {
-        val f = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-        f.timeZone = TimeZone.getTimeZone("UTC")
+        val f = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
         return f.parse(s)?.time ?: 0L
     }
 
     private fun checkForUpdates() {
-        if (isDownloading || isInstalling) return
         thread {
             try {
-                val conn = (URL(RELEASE_API).openConnection() as HttpURLConnection).apply {
+                val url = URL("https://api.github.com/repos/$REPO/releases/tags/latest")
+                val conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     setRequestProperty("User-Agent", "PoolAimApp")
-                    setRequestProperty("Accept", "application/vnd.github+json")
                     connectTimeout = 6000
                     readTimeout = 6000
                 }
-                if (conn.responseCode != 200) return@thread
-                val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                val assets = JSONObject(resp).getJSONArray("assets")
-                var url: String? = null
-                var assetTime = 0L
-                for (i in 0 until assets.length()) {
-                    val a = assets.getJSONObject(i)
-                    if (a.getString("name").endsWith(".apk")) {
-                        url = a.optString("browser_download_url", FALLBACK_APK)
-                        assetTime = parseTime(a.getString("updated_at"))
-                        break
+                if (conn.responseCode == 200) {
+                    val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(resp)
+                    val assets = json.optJSONArray("assets")
+                    var assetTime = 0L
+                    var downloadLink: String? = null
+                    if (assets != null) {
+                        for (i in 0 until assets.length()) {
+                            val a = assets.getJSONObject(i)
+                            val name = a.optString("name", "")
+                            if (name.endsWith(".apk")) {
+                                downloadLink = a.optString("browser_download_url", null)
+                                assetTime = parseTime(a.optString("updated_at", a.optString("created_at", "")))
+                                break
+                            }
+                        }
                     }
-                }
-                if (url == null || assetTime == 0L) return@thread
-                val installedAt = packageManager.getPackageInfo(packageName, 0).lastUpdateTime
-                val need = assetTime > installedAt
-                apkUrl = url
-                runOnUiThread {
-                    if (need != isUpdateRequired) {
-                        isUpdateRequired = need
-                        if (need) statusText = if (ar()) "تم العثور على تحديث، جارٍ التجهيز..." else "Update found, preparing..."
-                        build(scroll?.scrollY ?: 0)
+                    apkUrl = downloadLink ?: FALLBACK_APK
+
+                    val pi = packageManager.getPackageInfo(packageName, 0)
+                    val installTime = pi.lastUpdateTime
+                    val need = assetTime > installTime + 10_000L
+
+                    runOnUiThread {
+                        if (need != isUpdateRequired) {
+                            isUpdateRequired = need
+                            build(scroll?.scrollY ?: 0)
+                        }
                     }
+
                     if (need && !autoTried) {
                         autoTried = true
                         startUpdateFlow()
@@ -275,11 +317,9 @@ class MainActivity : Activity() {
                 }
                 if (tmp.length() < 100_000L) throw Exception("file too small")
                 if (out.exists()) out.delete()
-                tmp.renameTo(out)
-                runOnUiThread {
-                    isDownloading = false
-                    installApk(out)
-                }
+                if (!tmp.renameTo(out)) throw Exception("rename failed")
+                isDownloading = false
+                installApk(out)
             } catch (e: Exception) {
                 isDownloading = false
                 setStatus(
@@ -384,13 +424,13 @@ class MainActivity : Activity() {
             "٢) افتح التطبيق واضغط زر تشغيل العرض (Start).\n" +
             "٣) في أول مرة سينقلك التطبيق إلى إعدادات \"الظهور فوق التطبيقات\". فعّل الإذن ثم ارجع للتطبيق.\n" +
             "٤) عند رجوعك تظهر القائمة العائمة تلقائياً.\n" +
-            "٥) عند صدور تحديث يظهر كرت التحديث ويبدأ التنزيل والتثبيت تلقائياً. إذا ظهرت نافذة تأكيد التثبيت فاضغط تثبيت."
+            "٥) التحديثات بعد ذلك تتم تلقائياً داخل التطبيق دون الحاجة لتنزيل يدوي."
         } else {
             "1) Open the APK and allow installing from this source if asked.\n" +
             "2) Open the app and tap Start.\n" +
             "3) The first time, the app opens the \"Display over other apps\" settings. Enable it and come back.\n" +
             "4) When you return, the floating menu starts automatically.\n" +
-            "5) When an update is released, the update card appears and download/install starts automatically. If an install confirmation appears, tap Install."
+            "5) Future updates download and install automatically inside the app."
         }
         card.addView(label(installText, 13f, soft, false, false),
             LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(6) })
@@ -484,7 +524,6 @@ class MainActivity : Activity() {
 
         val card = helpCard { sv.smoothScrollTo(0, 0) }
 
-        statusView = null
         if (isUpdateRequired) {
             val updateBox = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -501,8 +540,7 @@ class MainActivity : Activity() {
                 16f, 0xFF38BDF8.toInt(), true, true
             ))
             val st = label(
-                if (statusText.isNotEmpty()) statusText
-                else if (isAr) "جارٍ التجهيز..." else "Preparing...",
+                statusText ?: (if (isAr) "جارٍ التحديث تلقائياً..." else "Updating automatically..."),
                 12f, Color.WHITE, false, true
             )
             statusView = st
@@ -510,11 +548,11 @@ class MainActivity : Activity() {
                 topMargin = dp(6)
             })
 
-            val updateNowBtn = styled(
-                if (isAr) "إعادة المحاولة / تحديث الآن 🚀" else "Retry / Update now 🚀",
+            val retryBtn = styled(
+                if (isAr) "إعادة المحاولة / التحديث الآن 🚀" else "Retry / Update now 🚀",
                 0xFF10B981.toInt(), Color.WHITE
             ) { startUpdateFlow() }
-            updateBox.addView(updateNowBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            updateBox.addView(retryBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(10)
             })
 
@@ -536,8 +574,8 @@ class MainActivity : Activity() {
             if (isUpdateRequired) {
                 Toast.makeText(
                     this,
-                    if (isAr) "جارٍ التحديث، انتظر اكتمال التثبيت"
-                    else "Updating, please wait for the install to finish",
+                    if (isAr) "يوجد تحديث أحدث، يرجى إتمام التحديث أعلاه!"
+                    else "A new update is available. Please complete update above!",
                     Toast.LENGTH_LONG
                 ).show()
                 return@styled
@@ -574,6 +612,7 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(8) })
+
         val goBtn = Button(this).apply {
             text = if (isAr) "اذهب" else "Go"
             isAllCaps = false
@@ -624,6 +663,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
+        instance = this
         val y = getSharedPreferences(Lang.PREFS, MODE_PRIVATE).getInt("main_scroll", 0)
         build(y)
         checkForUpdates()
@@ -649,5 +689,10 @@ class MainActivity : Activity() {
             getSharedPreferences(Lang.PREFS, MODE_PRIVATE).edit().putInt("main_scroll", it.scrollY).apply()
         }
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        super.onDestroy()
     }
 }
