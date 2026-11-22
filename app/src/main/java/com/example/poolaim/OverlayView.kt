@@ -36,8 +36,9 @@ class OverlayView(ctx: Context) : View(ctx) {
     private var loaded = false
 
     private val pocketR = 14f * d
+    private val touchR = 15.4f * d
     private val snapThresh = 28f * d
-    val touchOffX get() = 2.6f * pocketR
+    val touchOffX get() = 2.9f * pocketR
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER }
 
@@ -54,12 +55,28 @@ class OverlayView(ctx: Context) : View(ctx) {
     private val ghostDistPx get() = ghostDistStep * 3f * d
     private fun pulse() = 0.5f
 
+    private fun screenW() = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
+    private fun screenH() = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
+
+    // الوضع الافتراضي للعبة 8 Ball Pool (قياس من لقطة الشاشة): الزاوية العلوية اليسرى والسفلية اليمنى
+    fun applyGameLayout() {
+        val w = screenW()
+        val h = screenH()
+        rect.set(w * 0.197f, h * 0.241f, w * 0.803f, h * 0.904f)
+        p1.set(rect.left + rect.width() * 0.25f, rect.centerY())
+        p2.set(rect.right - rect.width() * 0.25f, rect.centerY())
+        marker.set(rect.centerX(), rect.centerY())
+        save()
+        invalidate()
+        onChanged?.invoke()
+    }
+
     fun resetLayout() {
-        val w = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
-        val h = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
+        val w = screenW()
+        val h = screenH()
 
         if (w > h) {
-            rect.set(w * 0.198f, h * 0.241f, w * 0.800f, h * 0.907f)
+            rect.set(w * 0.197f, h * 0.241f, w * 0.803f, h * 0.904f)
         } else {
             val tw = w * 0.92f
             val th = tw / 2.0f
@@ -76,8 +93,13 @@ class OverlayView(ctx: Context) : View(ctx) {
     }
 
     fun rotateTable() {
-        val w = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
-        val h = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
+        val w = screenW()
+        val h = screenH()
+
+        if (w > h) {
+            applyGameLayout()
+            return
+        }
 
         val nl = w - rect.right
         val nr = w - rect.left
@@ -255,14 +277,14 @@ class OverlayView(ctx: Context) : View(ctx) {
         if (!aimHidden || flags["ghost"] == true) {
             for ((p, label) in listOf(p1 to "C", p2 to "8")) {
                 val qx = p.x + touchOffX
-                touchCircle(c, qx, p.y, pocketR)
+                touchCircle(c, qx, p.y, touchR)
                 text.textSize = 10f * d; text.isFakeBoldText = true
-                c.drawText(label, qx, p.y - pocketR - 4f * d, text)
+                c.drawText(label, qx, p.y - touchR - 4f * d, text)
                 glowDot(c, p.x, p.y)
             }
         }
         if (flags["lines"] == true) {
-            touchCircle(c, marker.x + touchOffX, marker.y, pocketR)
+            touchCircle(c, marker.x + touchOffX, marker.y, touchR)
             glowDot(c, marker.x, marker.y)
         }
 
