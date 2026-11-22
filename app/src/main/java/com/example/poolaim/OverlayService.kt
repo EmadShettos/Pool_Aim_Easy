@@ -520,6 +520,7 @@ class OverlayService : Service() {
         val row1 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
         
         val tvGhost = tv(T("m_ghost"), 11f, Color.WHITE, true)
@@ -551,6 +552,7 @@ class OverlayService : Service() {
         val rowTop = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
 
         val tvC8 = tv(T("m_c8"), 11f, Color.WHITE, true)
@@ -583,6 +585,7 @@ class OverlayService : Service() {
         val rowLines = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
             setPadding(0, (4 * d).toInt(), 0, 0)
         }
         rowLines.addView(tv(T("m_line"), 11f, Color.WHITE, true),
@@ -594,6 +597,7 @@ class OverlayService : Service() {
             val h = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                layoutDirection = View.LAYOUT_DIRECTION_LTR
                 setPadding((2 * d).toInt(), 0, (2 * d).toInt(), 0)
             }
             h.addView(tv(num, 11f, Color.rgb(0, 229, 255), true))
@@ -684,8 +688,14 @@ class OverlayService : Service() {
         var currentForce = sp.getInt("cue_force", 1).coerceIn(1, 10)
         runCatching { view.cueForce = currentForce }
 
-        controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        controls = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.START
+        }
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.START
+        }
         val scroll = ScrollView(this).apply {
             addView(list)
             visibility = if (menuOpen) View.VISIBLE else View.GONE
@@ -748,7 +758,6 @@ class OverlayService : Service() {
             }
         }
 
-        // الترتيب والاتجاه الأصلي المعتمد للقائمة
         list.addView(btn(T(if (view.hideAll) "m_show_all" else "m_hide_all")) { b ->
             view.hideAll = !view.hideAll
             b.text = T(if (view.hideAll) "m_show_all" else "m_hide_all")
@@ -775,7 +784,7 @@ class OverlayService : Service() {
         list.addView(btn(T("m_ghost")) { togglePanel(ghost) })
         list.addView(ghost, panelLp())
 
-        // شبكة أرقام القوة الصغيرة والأنيقة (صفين من الأرقام الصافية فقط)
+        // شبكة أرقام القوة بالترتيب المعكوس الصريح (من 1 إلى 5 ومن 6 إلى 10)
         fun forceText(f: Int) = "${T("m_force")}: $f"
         val forceBtn = btn(forceText(currentForce)) { }
         forceBtnRef = forceBtn
@@ -783,35 +792,50 @@ class OverlayService : Service() {
         val forceBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
             setPadding((4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt())
             background = darkBox()
         }
         forcePanel = forceBox
 
-        val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val row1 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+        }
+        val row2 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+        }
 
-        for (p in 1..10) {
-            val numBtn = Button(this).apply {
-                text = "$p"
-                textSize = 10f
-                typeface = Typeface.DEFAULT_BOLD
-                minWidth = 0; minHeight = 0
-                minimumHeight = (28f * d).toInt()
-                minimumWidth = (36f * d).toInt()
-                setPadding(0, 0, 0, 0)
-                setOnClickListener {
-                    currentForce = p
-                    sp.edit().putInt("cue_force", currentForce).apply()
-                    forceBtnRef.text = forceText(currentForce)
-                    forcePanel.visibility = View.GONE
-                    runCatching { view.cueForce = currentForce; view.save(); view.invalidate() }
+        // ترتيب أزرار القوة يبدأ من 1 إلى 10 من اليسار لليمين بالتتابع
+        val orderedForces = listOf(
+            listOf(1, 2, 3, 4, 5),
+            listOf(6, 7, 8, 9, 10)
+        )
+
+        for ((idx, rowList) in orderedForces.withIndex()) {
+            val targetRow = if (idx == 0) row1 else row2
+            for (p in rowList) {
+                val numBtn = Button(this).apply {
+                    text = "$p"
+                    textSize = 10f
+                    typeface = Typeface.DEFAULT_BOLD
+                    minWidth = 0; minHeight = 0
+                    minimumHeight = (28f * d).toInt()
+                    minimumWidth = (36f * d).toInt()
+                    setPadding(0, 0, 0, 0)
+                    setOnClickListener {
+                        currentForce = p
+                        sp.edit().putInt("cue_force", currentForce).apply()
+                        forceBtnRef.text = forceText(currentForce)
+                        forcePanel.visibility = View.GONE
+                        runCatching { view.cueForce = currentForce; view.save(); view.invalidate() }
+                    }
                 }
+                targetRow.addView(numBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins((2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt())
+                })
             }
-            val targetRow = if (p <= 5) row1 else row2
-            targetRow.addView(numBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                setMargins((2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt())
-            })
         }
 
         forceBox.addView(row1)
