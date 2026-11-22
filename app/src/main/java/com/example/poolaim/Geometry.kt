@@ -18,7 +18,7 @@ val THEMES: List<Pair<String, Int>> = listOf(
 object Geometry {
     private const val EPS = 1e-3f
 
-    // المعامل الأساسي للقوة 1 (عصا بلياردو المبتدئين)
+    // المعامل الأساسي الناجح عند القوة 1
     private const val BASE_COEFF = 0.982f
     private const val FORCE_STEP = 0.0022f
 
@@ -50,8 +50,8 @@ object Geometry {
         vx /= initialLen
         vy /= initialLen
 
-        // ضبط نصف قطر الكرة الفعلي المتطابق مع وسائد اللعبة
-        val ballR = (r.r - r.l) * 0.0172f
+        // ضبط نصف القطر وإزاحة وسادة المطاط الدقيقة للعبة
+        val ballR = (r.r - r.l) * 0.0175f
         val boundL = r.l + ballR
         val boundR = r.r - ballR
         val boundT = r.t + ballR
@@ -81,13 +81,11 @@ object Geometry {
 
             if (axis == 'x') {
                 vx = -vx
-                // إذا كانت الضربة شبه عمودية على الحافة الرأسية، ترتد عمودياً بنسبة 100%
                 if (abs(vy) > 1e-4f) {
                     vy *= coeff
                 }
             } else {
                 vy = -vy
-                // إذا كانت الضربة شبه عمودية على الحافة الأفقية، ترتد عمودياً بنسبة 100%
                 if (abs(vx) > 1e-4f) {
                     vx *= coeff
                 }
