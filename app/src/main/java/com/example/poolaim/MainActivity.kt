@@ -6,6 +6,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -37,7 +39,12 @@ import kotlin.math.min
 class BannerView(ctx: Context) : View(ctx) {
     private val d = resources.displayMetrics.density
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val bmpPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val gold = 0xFFFFD21F.toInt()
+    private val logo: Bitmap? by lazy {
+        val id = resources.getIdentifier("pool_aim_icon", "drawable", context.packageName)
+        if (id != 0) BitmapFactory.decodeResource(resources, id) else null
+    }
 
     private fun fit(text: String, maxW: Float, maxH: Float): Float {
         p.textSize = 100f
@@ -70,33 +77,20 @@ class BannerView(ctx: Context) : View(ctx) {
         p.textSize = fit("Shettos", w * 0.6f, h * 0.15f)
         c.drawText("Shettos", cx, h * 0.40f, p)
 
-        val cy = h * 0.70f
-        val rad = min(w * 0.2f, h * 0.17f)
-        p.color = 0xFFB71C1C.toInt(); c.drawCircle(cx, cy, rad, p)
-        p.color = 0xFFE53935.toInt(); c.drawCircle(cx - rad * 0.08f, cy - rad * 0.08f, rad * 0.88f, p)
-        p.color = Color.argb(115, 255, 255, 255); c.drawCircle(cx - rad * 0.4f, cy - rad * 0.43f, rad * 0.17f, p)
-
-        val hw = rad * 0.6f
-        val baseY = cy - rad * 0.5f
-        val topY = cy - rad * 1.3f
-        val crown = Path().apply {
-            moveTo(cx - hw, baseY)
-            lineTo(cx - hw, topY + rad * 0.17f)
-            lineTo(cx - hw * 0.5f, topY + rad * 0.55f)
-            lineTo(cx, topY)
-            lineTo(cx + hw * 0.5f, topY + rad * 0.55f)
-            lineTo(cx + hw, topY + rad * 0.17f)
-            lineTo(cx + hw, baseY)
-            close()
+        val bmp = logo
+        if (bmp != null) {
+            val size = min(w * 0.85f, h * 0.5f)
+            val cy = h * 0.72f
+            val dst = RectF(cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2)
+            val clip = Path().apply { addRoundRect(dst, 28 * d, 28 * d, Path.Direction.CW) }
+            c.save()
+            c.clipPath(clip)
+            c.drawBitmap(bmp, null, dst, bmpPaint)
+            c.restore()
+            p.style = Paint.Style.STROKE; p.strokeWidth = 2 * d; p.color = gold
+            c.drawRoundRect(dst, 28 * d, 28 * d, p)
+            p.style = Paint.Style.FILL
         }
-        p.color = 0xFFFFC933.toInt(); c.drawPath(crown, p)
-        p.style = Paint.Style.STROKE; p.strokeWidth = 2 * d; p.color = 0xFF9A6B00.toInt(); c.drawPath(crown, p)
-        p.style = Paint.Style.FILL; p.color = 0xFFC99100.toInt()
-        c.drawRect(cx - hw, baseY - rad * 0.2f, cx + hw, baseY, p)
-        p.color = Color.WHITE
-        c.drawCircle(cx - hw, topY + rad * 0.17f, rad * 0.08f, p)
-        c.drawCircle(cx, topY, rad * 0.08f, p)
-        c.drawCircle(cx + hw, topY + rad * 0.17f, rad * 0.08f, p)
     }
 }
 
