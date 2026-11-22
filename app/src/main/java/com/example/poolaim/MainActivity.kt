@@ -24,6 +24,8 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.FrameLayout
+import android.os.StrictMode
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -165,8 +167,8 @@ class MainActivity : Activity() {
 
     private fun installFallback(file: File) {
         try {
-            val builder = android.os.StrictMode.VmPolicy.Builder()
-            android.os.StrictMode.setVmPolicy(builder.build())
+            val builder = StrictMode.VmPolicy.Builder()
+            StrictMode.setVmPolicy(builder.build())
             val uri = Uri.fromFile(file)
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
@@ -450,6 +452,23 @@ class MainActivity : Activity() {
         return card
     }
 
+    private fun openWhatsApp() {
+        val uri = Uri.parse("https://wa.me/201093532277")
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage("com.whatsapp"))
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, uri))
+            } catch (e2: Exception) {
+                Toast.makeText(
+                    this,
+                    if (Lang.isAr(this)) "تعذر فتح واتساب" else "Could not open WhatsApp",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
     private fun switchLang(ar: Boolean) {
         val y = scroll?.scrollY ?: 0
         Lang.set(this, ar)
@@ -573,7 +592,7 @@ class MainActivity : Activity() {
         val strip = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setPadding(dp(64), dp(10), dp(64), dp(10))
             background = GradientDrawable().apply {
                 setColor(0xFF0B0B0B.toInt())
                 cornerRadius = dp(14).toFloat()
@@ -585,7 +604,34 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(8) })
-        root.addView(strip, LinearLayout.LayoutParams(
+        val goBtn = Button(this).apply {
+            text = if (isAr) "اذهب" else "Go"
+            isAllCaps = false
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.BLACK)
+            minWidth = 0
+            minHeight = 0
+            minimumWidth = 0
+            minimumHeight = 0
+            setPadding(0, 0, 0, 0)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(gold)
+                setStroke(dp(2), Color.WHITE)
+            }
+            setOnClickListener { openWhatsApp() }
+        }
+        val stripFrame = FrameLayout(this)
+        stripFrame.addView(strip, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
+        ))
+        stripFrame.addView(goBtn, FrameLayout.LayoutParams(dp(52), dp(52)).apply {
+            gravity = Gravity.CENTER_VERTICAL or (if (isAr) Gravity.LEFT else Gravity.RIGHT)
+            leftMargin = dp(10)
+            rightMargin = dp(10)
+        })
+        root.addView(stripFrame, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(14) })
 
