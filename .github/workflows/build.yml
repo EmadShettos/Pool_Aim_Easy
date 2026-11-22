@@ -25,7 +25,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle assembleEmadShettosDebug --stacktrace
+        run: ./gradlew assembleEmadShettosDebug
       - name: Prepare APK
         run: cp app/build/outputs/apk/emadShettosDebug/*.apk EmadShettos-PoolAim.apk
       - uses: actions/upload-artifact@v4
