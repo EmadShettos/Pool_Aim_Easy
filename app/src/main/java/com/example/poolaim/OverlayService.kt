@@ -80,6 +80,7 @@ object Lang {
         "m_hide_all" to "Hide all",
         "m_show_all" to "Show",
         "m_rotate" to "Rotate 🔄",
+        "m_portrait" to "Portrait 📱",
         "m_stop" to "Stop",
         "m_hide_rect" to "Hide rect",
         "m_show_rect" to "Show rect",
@@ -139,6 +140,7 @@ object Lang {
         "m_hide_all" to "إخفاء الكل",
         "m_show_all" to "إظهار",
         "m_rotate" to "تدوير 🔄",
+        "m_portrait" to "طولي 📱",
         "m_stop" to "إيقاف",
         "m_hide_rect" to "إخفاء المستطيل",
         "m_show_rect" to "إظهار المستطيل",
@@ -317,12 +319,14 @@ class OverlayService : Service() {
     private lateinit var glowPanelView: LinearLayout
     private lateinit var forcePanel: LinearLayout
     private lateinit var forceBtnRef: Button
+    private lateinit var rotateBtnRef: Button
     private lateinit var controlsParams: WindowManager.LayoutParams
     private lateinit var overlayParams: WindowManager.LayoutParams
     private val handles = mutableListOf<Handle>()
     private val d get() = resources.displayMetrics.density
     private fun prefs(): SharedPreferences = getSharedPreferences(Lang.PREFS, MODE_PRIVATE)
     private fun T(k: String) = Lang.t(this, k)
+    private var isPortraitMode = false
 
     private val langListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == Lang.KEY && ::controls.isInitialized && ::view.isInitialized) {
@@ -431,7 +435,7 @@ class OverlayService : Service() {
         nm.createNotificationChannel(NotificationChannel(ch, "Pool Aim Shettos", NotificationManager.IMPORTANCE_LOW))
         val n = Notification.Builder(this, ch)
             .setContentTitle("Pool Aim Shettos is running")
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setSmallIcon(android.R.drawable.sym_def_app_icon)
             .build()
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(1, n, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -478,6 +482,7 @@ class OverlayService : Service() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
         row.addView(tv(title, if (bold) 12f else 11f, Color.WHITE, bold),
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -491,11 +496,15 @@ class OverlayService : Service() {
     }
 
     private fun seekRow(title: String, maxV: Int, init: Int, onChange: (Int) -> Unit): LinearLayout {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
         row.addView(tv(title, 11f, Color.WHITE, true))
         val sb = TickSeekBar(this).apply {
             max = maxV
             progress = init
+            rotation = 180f
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, pr: Int, fromUser: Boolean) {
                     if (fromUser) onChange(pr)
@@ -520,7 +529,7 @@ class OverlayService : Service() {
         val row1 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
         
         val tvGhost = tv(T("m_ghost"), 11f, Color.WHITE, true)
@@ -552,7 +561,7 @@ class OverlayService : Service() {
         val rowTop = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
 
         val tvC8 = tv(T("m_c8"), 11f, Color.WHITE, true)
@@ -585,7 +594,7 @@ class OverlayService : Service() {
         val rowLines = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(0, (4 * d).toInt(), 0, 0)
         }
         rowLines.addView(tv(T("m_line"), 11f, Color.WHITE, true),
@@ -597,7 +606,7 @@ class OverlayService : Service() {
             val h = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                layoutDirection = View.LAYOUT_DIRECTION_LTR
+                layoutDirection = View.LAYOUT_DIRECTION_RTL
                 setPadding((2 * d).toInt(), 0, (2 * d).toInt(), 0)
             }
             h.addView(tv(num, 11f, Color.rgb(0, 229, 255), true))
@@ -631,9 +640,9 @@ class OverlayService : Service() {
             rowLines.addView(h, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
 
-        addExclusiveCheck("1", "single")
-        addExclusiveCheck("2", "bank")
         addExclusiveCheck("4", "double_bank")
+        addExclusiveCheck("2", "bank")
+        addExclusiveCheck("1", "single")
         panel.addView(rowLines)
 
         return panel
@@ -662,6 +671,7 @@ class OverlayService : Service() {
             .putBoolean("c8_open", c8PanelView.visibility == View.VISIBLE)
             .putBoolean("glow_open", glowPanelView.visibility == View.VISIBLE)
             .putInt("menu_scroll", menuScroll.scrollY)
+            .putBoolean("is_portrait", isPortraitMode)
             .apply()
     }
 
@@ -684,6 +694,7 @@ class OverlayService : Service() {
         val startY = sp.getInt("menu_y", 120).coerceIn(0, (dm.heightPixels - bs).coerceAtLeast(0))
         val menuOpen = sp.getBoolean("menu_open", false)
         val savedScroll = sp.getInt("menu_scroll", 0)
+        isPortraitMode = sp.getBoolean("is_portrait", false)
 
         var currentForce = sp.getInt("cue_force", 1).coerceIn(1, 10)
         runCatching { view.cueForce = currentForce }
@@ -732,14 +743,21 @@ class OverlayService : Service() {
                     val dy = e.rawY - downY
                     if (!moved && hypot(dx, dy) > slop) moved = true
                     if (moved) {
-                        controlsParams.x = (sx0 + dx).toInt()
-                        controlsParams.y = (sy0 + dy).toInt()
+                        controlsParams.x = (sx0 + dx).toInt().coerceIn(0, (dm.widthPixels - bs).coerceAtLeast(0))
+                        controlsParams.y = (sy0 + dy).toInt().coerceIn(0, (dm.heightPixels - bs).coerceAtLeast(0))
                         wm.updateViewLayout(controls, controlsParams)
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!moved) scroll.visibility = if (scroll.visibility == View.GONE) View.VISIBLE else View.GONE
+                    if (!moved) {
+                        scroll.visibility = if (scroll.visibility == View.GONE) View.VISIBLE else View.GONE
+                    } else {
+                        // الالتصاق الذكي بالحافة الأقرب (يسار أو يمين)
+                        val snapLeft = controlsParams.x < dm.widthPixels / 2
+                        controlsParams.x = if (snapLeft) 10 else (dm.widthPixels - bs - 10)
+                        wm.updateViewLayout(controls, controlsParams)
+                    }
                     saveMenu()
                     true
                 }
@@ -764,9 +782,17 @@ class OverlayService : Service() {
             view.save(); view.invalidate(); syncHandles()
         })
 
-        list.addView(btn(T("m_rotate")) {
+        // زر التدوير التبادلي: Rotate 🔄 / Portrait 📱
+        fun rotateLabel() = T(if (isPortraitMode) "m_portrait" else "m_rotate")
+        val rotateBtn = btn(rotateLabel()) { }
+        rotateBtnRef = rotateBtn
+        rotateBtn.setOnClickListener {
             view.rotateTable()
-        })
+            isPortraitMode = !isPortraitMode
+            rotateBtnRef.text = rotateLabel()
+            saveMenu()
+        }
+        list.addView(rotateBtn)
 
         list.addView(btn(T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")) { b ->
             view.rectHidden = !view.rectHidden
@@ -784,7 +810,6 @@ class OverlayService : Service() {
         list.addView(btn(T("m_ghost")) { togglePanel(ghost) })
         list.addView(ghost, panelLp())
 
-        // شبكة أرقام القوة بالترتيب المعكوس الصريح (من 1 إلى 5 ومن 6 إلى 10)
         fun forceText(f: Int) = "${T("m_force")}: $f"
         val forceBtn = btn(forceText(currentForce)) { }
         forceBtnRef = forceBtn
@@ -792,7 +817,7 @@ class OverlayService : Service() {
         val forceBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
-            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding((4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt())
             background = darkBox()
         }
@@ -800,17 +825,16 @@ class OverlayService : Service() {
 
         val row1 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
         val row2 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
 
-        // ترتيب أزرار القوة يبدأ من 1 إلى 10 من اليسار لليمين بالتتابع
         val orderedForces = listOf(
-            listOf(1, 2, 3, 4, 5),
-            listOf(6, 7, 8, 9, 10)
+            listOf(5, 4, 3, 2, 1),
+            listOf(10, 9, 8, 7, 6)
         )
 
         for ((idx, rowList) in orderedForces.withIndex()) {
