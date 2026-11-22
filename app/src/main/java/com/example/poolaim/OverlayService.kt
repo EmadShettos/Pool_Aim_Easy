@@ -328,7 +328,7 @@ class OverlayService : Service() {
     private fun prefs(): SharedPreferences = getSharedPreferences(Lang.PREFS, MODE_PRIVATE)
     private fun T(k: String) = Lang.t(this, k)
     private var isPortraitMode = false
-    private val dragScale = 0.75f
+    private val dragScale = 0.6f
 
     private val langListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == Lang.KEY && ::controls.isInitialized && ::view.isInitialized) {
@@ -359,13 +359,8 @@ class OverlayService : Service() {
 
     private fun applyGameRect() {
         if (!::view.isInitialized) return
-        val w = view.width.toFloat()
-        val h = view.height.toFloat()
-        if (w <= 0f || h <= 0f) return
-        view.setPoint("tl", w * 0.197f, h * 0.241f, true)
-        view.setPoint("br", w * 0.803f, h * 0.900f, true)
-        view.save()
-        view.invalidate()
+        if (view.width <= 0 || view.height <= 0) return
+        if (view.width > view.height) view.applyGameLayout()
         syncHandles()
     }
 
@@ -378,7 +373,7 @@ class OverlayService : Service() {
     }
 
     private inner class Handle(val key: String) {
-        val size = (33 * resources.displayMetrics.density).toInt()
+        val size = (36 * resources.displayMetrics.density).toInt()
         val v = View(this@OverlayService)
         val lp = WindowManager.LayoutParams(
             size, size, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -775,4 +770,159 @@ class OverlayService : Service() {
                     val dy = e.rawY - downY
                     if (!moved && hypot(dx, dy) > slop) moved = true
                     if (moved) {
-                        controlsParams.x = (s
+                        controlsParams.x = (sx0 + dx).toInt().coerceIn(0, (dm.widthPixels - bs).coerceAtLeast(0))
+                        controlsParams.y = (sy0 + dy).toInt().coerceIn(0, (dm.heightPixels - bs).coerceAtLeast(0))
+                        wm.updateViewLayout(controls, controlsParams)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!moved) {
+                        scroll.visibility = if (scroll.visibility == View.GONE) View.VISIBLE else View.GONE
+                    } else {
+                        val snapLeft = controlsParams.x < dm.widthPixels / 2
+                        controlsParams.x = if (snapLeft) 10 else (dm.widthPixels - bs - 10)
+                        wm.updateViewLayout(controls, controlsParams)
+                    }
+                    saveMenu()
+                    true
+                }
+                else -> false
+            }
+        }
+
+        val panelW = (220 * d).toInt()
+        val panelLp = { LinearLayout.LayoutParams(panelW, LinearLayout.LayoutParams.WRAP_CONTENT) }
+
+        val rawTitle = T("m_c8_title")
+        val styledC8Title = SpannableString(rawTitle).apply {
+            val openIdx = rawTitle.indexOf('(')
+            if (openIdx >= 0) {
+                setSpan(RelativeSizeSpan(0.82f), openIdx, rawTitle.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+
+        list.addView(btn(T(if (view.hideAll) "m_show_all" else "m_hide_all")) { b ->
+            view.hideAll = !view.hideAll
+            b.text = T(if (view.hideAll) "m_show_all" else "m_hide_all")
+            view.save(); view.invalidate(); syncHandles()
+        })
+
+        fun rotateLabel() = T(if (isPortraitMode) "m_portrait" else "m_rotate")
+        val rotateBtn = btn(rotateLabel()) { }
+        rotateBtnRef = rotateBtn
+        rotateBtn.setOnClickListener {
+            view.rotateTable()
+            isPortraitMode = !isPortraitMode
+            rotateBtnRef.text = rotateLabel()
+            saveMenu()
+            syncHandles()
+        }
+        list.addView(rotateBtn)
+
+        list.addView(btn(T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")) { b ->
+            view.rectHidden = !view.rectHidden
+            b.text = T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")
+            view.save(); view.invalidate(); syncHandles()
+        })
+        list.addView(btn(T(if (view.locked) "m_unlock" else "m_lock")) { b ->
+            view.locked = !view.locked
+            b.text = T(if (view.locked) "m_unlock" else "m_lock")
+            view.save(); view.invalidate(); syncHandles()
+        })
+        list.addView(btn(T("m_pockets")) { view.toggle("lines"); syncHandles() })
+        list.addView(btn(styledC8Title) { togglePanel(c8) })
+        list.addView(c8, panelLp())
+        list.addView(btn(T("m_ghost")) { togglePanel(ghost) })
+        list.addView(ghost, panelLp())
+
+        fun forceText(f: Int) = "${T("m_force")}: $f"
+        val forceBtn = btn(forceText(currentForce)) { }
+        forceBtnRef = forceBtn
+
+        val forceBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding((4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt())
+            background = darkBox()
+        }
+        forcePanel = forceBox
+
+        val row1 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
+        val row2 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
+
+        val orderedForces = listOf(
+            listOf(5, 4, 3, 2, 1),
+            listOf(10, 9, 8, 7, 6)
+        )
+
+        for ((idx, rowList) in orderedForces.withIndex()) {
+            val targetRow = if (idx == 0) row1 else row2
+            for (p in rowList) {
+                val numBtn = Button(this).apply {
+                    text = "$p"
+                    textSize = 10f
+                    typeface = Typeface.DEFAULT_BOLD
+                    minWidth = 0; minHeight = 0
+                    minimumHeight = (28f * d).toInt()
+                    minimumWidth = (36f * d).toInt()
+                    setPadding(0, 0, 0, 0)
+                    setOnClickListener {
+                        currentForce = p
+                        sp.edit().putInt("cue_force", currentForce).apply()
+                        forceBtnRef.text = forceText(currentForce)
+                        forcePanel.visibility = View.GONE
+                        runCatching { view.cueForce = currentForce; view.save(); view.invalidate() }
+                    }
+                }
+                targetRow.addView(numBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins((2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt())
+                })
+            }
+        }
+
+        forceBox.addView(row1)
+        forceBox.addView(row2)
+
+        forceBtn.setOnClickListener {
+            forcePanel.visibility = if (forcePanel.visibility == View.GONE) View.VISIBLE else View.GONE
+        }
+
+        list.addView(forceBtn)
+        list.addView(forcePanel, panelLp())
+
+        list.addView(btn(T("m_line_plus")) { view.thicker(1f) })
+        list.addView(btn(T("m_line_minus")) { view.thicker(-1f) })
+        list.addView(btn(T("m_glow")) { togglePanel(glow) })
+        list.addView(glow, panelLp())
+        list.addView(btn(T("m_theme")) { view.nextTheme() })
+        list.addView(btn(T("m_hud")) { view.toggle("hud") })
+        list.addView(btn(T("m_reset")) { view.resetLayout(); view.save() })
+        list.addView(btn(T("m_stop")) { stopSelf() })
+
+        val scrollH = (min(dm.widthPixels, dm.heightPixels) * 0.45f).toInt()
+        controls.addView(ball, LinearLayout.LayoutParams(bs, bs))
+        controls.addView(scroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, scrollH))
+
+        wm.addView(controls, controlsParams)
+        if (menuOpen) scroll.post { scroll.scrollTo(0, savedScroll) }
+    }
+
+    override fun onDestroy() {
+        runCatching { prefs().unregisterOnSharedPreferenceChangeListener(langListener) }
+        saveMenu()
+        view.save()
+        for (h in handles) if (h.attached) runCatching { wm.removeView(h.v) }
+        runCatching { wm.removeView(controls) }
+        runCatching { wm.removeView(view) }
+        super.onDestroy()
+    }
+}
