@@ -103,6 +103,35 @@ object Geometry {
         return out
     }
 
+    fun cueReflection(cue: Pt, target: Pt, dir: Pt, r: Box, cueForce: Int = 1): List<Pair<Pt, Pt>> {
+        val dx = dir.first
+        val dy = dir.second
+        val dLen = hypot(dx, dy)
+        if (dLen < 1e-6f) return emptyList()
+
+        val nx = dx / dLen
+        val ny = dy / dLen
+
+        // متجها المماس العموديان على اتجاه انطلاق الكرة الهدف (قاعدة الزاوية 90°)
+        val t1x = -ny
+        val t1y = nx
+        val t2x = ny
+        val t2y = -nx
+
+        // متجه حركة الكرة البيضاء قبل الاصطدام
+        val inX = target.first - cue.first
+        val inY = target.second - cue.second
+
+        // اختيار اتجاه المماس الذي تسير فيه الكرة البيضاء للأمام مع زاوية الاندفاع
+        val dot1 = inX * t1x + inY * t1y
+        val dot2 = inX * t2x + inY * t2y
+
+        val chosen = if (dot1 >= dot2) Pt(t1x, t1y) else Pt(t2x, t2y)
+
+        // امتداد مسار ارتداد الكرة البيضاء حتى حافة المستطيل/الوسادة
+        return bankSegments(target, chosen, r, 1, cueForce)
+    }
+
     fun unit(a: Pt, b: Pt): Pt {
         val d = dist(a, b)
         return if (d < 1e-9f) Pt(0f, 0f) else Pt((b.first - a.first) / d, (b.second - a.second) / d)
