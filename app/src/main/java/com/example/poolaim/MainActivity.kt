@@ -24,8 +24,6 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
-import android.widget.FrameLayout
-import android.os.StrictMode
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -52,18 +50,10 @@ class InstallResultReceiver : BroadcastReceiver() {
                     ctx.startActivity(confirm)
                 }
             }
-            PackageInstaller.STATUS_SUCCESS -> {
-                val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
-                if (launch != null) {
-                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                    ctx.startActivity(launch)
-                }
-            }
+            PackageInstaller.STATUS_SUCCESS -> {}
             else -> {
                 val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
-                MainActivity.instance?.runOnUiThread {
-                    MainActivity.instance?.onInstallError(msg)
-                }
+                Toast.makeText(ctx, "Update install failed: $msg", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -138,36 +128,6 @@ class BannerView(ctx: Context) : View(ctx) {
 }
 
 class MainActivity : Activity() {
-    companion object {
-        var instance: MainActivity? = null
-    }
-
-    fun onInstallError(msg: String) {
-        isInstalling = false
-        val f = File(cacheDir, "update.apk")
-        if (f.exists()) {
-            setStatus(if (ar()) "جارٍ فتح التثبيت..." else "Opening installer...")
-            installFallback(f)
-        } else {
-            setStatus(if (ar()) "فشل التثبيت: $msg" else "Install failed: $msg")
-        }
-    }
-
-    private fun installFallback(file: File) {
-        try {
-            val builder = StrictMode.VmPolicy.Builder()
-            StrictMode.setVmPolicy(builder.build())
-            val uri = Uri.fromFile(file)
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(intent)
-        } catch (e: Exception) {
-            setStatus(if (ar()) "تعذر فتح التثبيت: ${e.message}" else "Could not open installer: ${e.message}")
-        }
-    }
-
     private val gold = 0xFFFFD21F.toInt()
     private var scroll: ScrollView? = null
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -249,7 +209,7 @@ class MainActivity : Activity() {
             pendingUpdate = true
             Toast.makeText(
                 this,
-                if (ar()) "فعّل "السماح بتثبيت التطبيقات" لهذا التطبيق ثم ارجع" else "Allow "Install unknown apps" for this app, then come back",
+                if (ar()) "فعّل إذن تثبيت التطبيقات لهذا التطبيق ثم ارجع" else "Allow Install unknown apps for this app, then come back",
                 Toast.LENGTH_LONG
             ).show()
             startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
@@ -334,7 +294,10 @@ class MainActivity : Activity() {
             session.close()
         } catch (e: Exception) {
             isInstalling = false
-            installFallback(file)
+            setStatus(
+                if (ar()) "تعذر التثبيت، اضغط الزر للمحاولة مرة أخرى"
+                else "Install failed, tap the button to retry"
+            )
         }
     }
 
@@ -397,13 +360,13 @@ class MainActivity : Activity() {
         val installText = if (isAr) {
             "١) افتح ملف APK واسمح للهاتف بالتثبيت من هذا المصدر إذا طلب ذلك.\n" +
             "٢) افتح التطبيق واضغط زر تشغيل العرض (Start).\n" +
-            "٣) في أول مرة سينقلك التطبيق إلى إعدادات \"الظهور فوق التطبيقات\". فعّل الإذن ثم ارجع للتطبيق.\n" +
+            "٣) في أول مرة سينقلك التطبيق إلى إعدادات الظهور فوق التطبيقات. فعّل الإذن ثم ارجع للتطبيق.\n" +
             "٤) عند رجوعك تظهر القائمة العائمة تلقائياً.\n" +
             "٥) عند صدور تحديث يظهر كرت التحديث ويبدأ التنزيل والتثبيت تلقائياً. إذا ظهرت نافذة تأكيد التثبيت فاضغط تثبيت."
         } else {
             "1) Open the APK and allow installing from this source if asked.\n" +
             "2) Open the app and tap Start.\n" +
-            "3) The first time, the app opens the \"Display over other apps\" settings. Enable it and come back.\n" +
+            "3) The first time, the app opens the 'Display over other apps' settings. Enable it and come back.\n" +
             "4) When you return, the floating menu starts automatically.\n" +
             "5) When an update is released, the update card appears and download/install starts automatically. If an install confirmation appears, tap Install."
         }
@@ -435,23 +398,6 @@ class MainActivity : Activity() {
         card.addView(styled(T("back_top"), 0xFF0B0B0B.toInt(), gold) { onTop() },
             LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(18) })
         return card
-    }
-
-    private fun openWhatsApp() {
-        val uri = Uri.parse("https://wa.me/201093532277")
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage("com.whatsapp"))
-        } catch (e: Exception) {
-            try {
-                startActivity(Intent(Intent.ACTION_VIEW, uri))
-            } catch (e2: Exception) {
-                Toast.makeText(
-                    this,
-                    if (Lang.isAr(this)) "تعذر فتح واتساب" else "Could not open WhatsApp",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
     }
 
     private fun switchLang(ar: Boolean) {
@@ -577,7 +523,7 @@ class MainActivity : Activity() {
         val strip = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(64), dp(10), dp(64), dp(10))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
             background = GradientDrawable().apply {
                 setColor(0xFF0B0B0B.toInt())
                 cornerRadius = dp(14).toFloat()
@@ -589,34 +535,7 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(8) })
-        val goBtn = Button(this).apply {
-            text = if (isAr) "اذهب" else "Go"
-            isAllCaps = false
-            textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.BLACK)
-            minWidth = 0
-            minHeight = 0
-            minimumWidth = 0
-            minimumHeight = 0
-            setPadding(0, 0, 0, 0)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(gold)
-                setStroke(dp(2), Color.WHITE)
-            }
-            setOnClickListener { openWhatsApp() }
-        }
-        val stripFrame = FrameLayout(this)
-        stripFrame.addView(strip, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
-        ))
-        stripFrame.addView(goBtn, FrameLayout.LayoutParams(dp(52), dp(52)).apply {
-            gravity = Gravity.CENTER_VERTICAL or (if (isAr) Gravity.LEFT else Gravity.RIGHT)
-            leftMargin = dp(10)
-            rightMargin = dp(10)
-        })
-        root.addView(stripFrame, LinearLayout.LayoutParams(
+        root.addView(strip, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(14) })
 
@@ -639,7 +558,6 @@ class MainActivity : Activity() {
 
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
-        instance = this
         val y = getSharedPreferences(Lang.PREFS, MODE_PRIVATE).getInt("main_scroll", 0)
         build(y)
         checkForUpdates()
