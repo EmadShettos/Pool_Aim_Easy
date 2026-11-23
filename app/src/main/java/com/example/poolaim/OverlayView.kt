@@ -1,65 +1,90 @@
 package com.example.poolaim
 
 import android.content.Context
-import android.graphics.*
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.DashPathEffect
+import android.graphics.Paint
+import android.graphics.PointF
+import android.graphics.RectF
 import android.view.View
-import kotlin.math.*
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
-class OverlayView(ctx: Context) : View(ctx) {
+class OverlayView(context: Context) : View(context) {
     private val d = resources.displayMetrics.density
-    private val prefs = ctx.getSharedPreferences("overlay_prefs", Context.MODE_PRIVATE)
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textAlign = Paint.Align.CENTER
+    }
+
+    private val prefs = context.getSharedPreferences("overlay_prefs", Context.MODE_PRIVATE)
 
     val flags = linkedMapOf(
-        "lines" to true, "single" to false, "bank" to false, "double_bank" to true,
-        "ghost" to true, "hud" to true, "animate" to false, "snap" to false, "glow" to false
+        "lines" to true,
+        "single" to false,
+        "bank" to false,
+        "double_bank" to true,
+        "ghost" to true,
+        "hud" to true,
+        "animate" to false,
+        "snap" to false,
+        "glow" to false
     )
+
     var thickness = 3f
     var themeIdx = 0
     var cueForce = 1
-    var locked = false
-    var rectHidden = false
-    var aimHidden = false
-    var hideAll = false
 
     var ghostDistStep = 6
     var ghostSizeStep = 9
     var glowStep = 5
     var glowSizeStep = 0
 
-    val p1 = PointF()
-    val p2 = PointF()
-    val marker = PointF()
-    val rect = RectF()
+    var locked = false
+    var rectHidden = false
+    var aimHidden = false
+    var hideAll = false
 
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER }
-    private val hudBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(190, 15, 23, 42) }
-    private val hudBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE; strokeWidth = 1.2f * d; color = Color.argb(120, 255, 255, 255)
+    var onChanged: (() -> Unit)? = null
+
+    private val rect = RectF()
+    private val p1 = PointF()
+    private val p2 = PointF()
+    private val marker = PointF()
+
+    private var loaded = false
+
+    init {
+        load()
+        flags["animate"] = false
     }
 
-    private val touchR get() = 18f * d
-    private val touchOffX get() = -32f * d
+    private val color get() = THEMES[themeIdx].second
     private val ballR get() = rect.width() * 0.0175f
     private val pocketR get() = ballR * 1.25f
     private val ghostR get() = ballR * (0.8f + ghostSizeStep * 0.04f)
     private val ghostDistPx get() = ballR * (2f + ghostDistStep * 0.15f)
     private val snapThresh get() = pocketR * 2.2f
 
-    private var loaded = false
-    var onChanged: (() -> Unit)? = null
+    fun toggle(k: String) {
+        flags[k] = !(flags[k] ?: false)
+        save(); invalidate()
+    }
 
-    init { load(); flags["animate"] = false }
-
-    private val color get() = THEMES[themeIdx].second
-
-    private fun box() = Box(rect.left, rect.top, rect.right, rect.bottom)
-    private fun pt(p: PointF) = Pt(p.x, p.y)
+    fun nextTheme(): String {
+        themeIdx = (themeIdx + 1) % THEMES.size
+        save(); invalidate()
+        return THEMES[themeIdx].first
+    }
 
     private fun screenW() = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
     private fun screenH() = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
 
-    // الوضع الافتراضي للعبة 8 Ball Pool
     fun applyGameLayout() {
         val w = screenW()
         val h = screenH()
@@ -120,60 +145,69 @@ class OverlayView(ctx: Context) : View(ctx) {
         onChanged?.invoke()
     }
 
-    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
-        val orientationChanged = (ow > 0 && oh > 0) && ((ow > oh) != (w > h))
-        if (!loaded || orientationChanged) {
-            resetLayout()
-            loaded = true
-        }
-        onChanged?.invoke()
+    fun thicker(delta: Float) {
+        thickness = (thickness + delta).coerceIn(1f, 10f)
+        save(); invalidate()
     }
 
-    fun toggle(k: String) { flags[k] = !(flags[k] ?: false); flags["animate"] = false; save(); invalidate() }
-    fun nextTheme() { themeIdx = (themeIdx + 1) % THEMES.size; save(); invalidate() }
-    fun thicker(delta: Float) { thickness = (thickness + delta).coerceIn(1f, 10f); save(); invalidate() }
-
     fun pos(key: String): PointF = when (key) {
-        "p1" -> PointF(p1.x, p1.y)
-        "p2" -> PointF(p2.x, p2.y)
-        "marker" -> PointF(marker.x, marker.y)
+        "p1" -> p1
+        "p2" -> p2
+        "marker" -> marker
         "tl" -> PointF(rect.left, rect.top)
-        else -> PointF(rect.right, rect.bottom)
+        "br" -> PointF(rect.right, rect.bottom)
+        else -> PointF()
     }
 
     fun touchPos(key: String): PointF {
         val p = pos(key)
-        return if (key == "p1" || key == "p2" || key == "marker") PointF(p.x + touchOffX, p.y) else p
+        return PointF(p.x, p.y)
     }
 
     fun setPoint(key: String, x: Float, y: Float, final: Boolean) {
         when (key) {
-            "p1", "p2" -> {
-                val (nx, ny) = Geometry.clamp(Pt(x, y), box())
-                (if (key == "p1") p1 else p2).set(nx, ny)
-            }
-            "marker" -> { val (nx, ny) = Geometry.clamp(Pt(x, y), box()); marker.set(nx, ny) }
+            "p1" -> p1.set(x, y)
+            "p2" -> p2.set(x, y)
+            "marker" -> marker.set(x, y)
             "tl" -> {
-                rect.left = min(x.coerceIn(0f, width.toFloat()), rect.right - 120f * d)
-                rect.top = min(y.coerceIn(0f, height.toFloat()), rect.bottom - 80f * d)
-                keepInside()
+                rect.left = min(x, rect.right - 100f * d)
+                rect.top = min(y, rect.bottom - 60f * d)
             }
             "br" -> {
-                rect.right = max(x.coerceIn(0f, width.toFloat()), rect.left + 120f * d)
-                rect.bottom = max(y.coerceIn(0f, height.toFloat()), rect.top + 80f * d)
-                keepInside()
+                rect.right = max(x, rect.left + 100f * d)
+                rect.bottom = max(y, rect.top + 60f * d)
             }
         }
+        keepInside()
         invalidate()
+        if (final) onChanged?.invoke()
     }
 
     private fun keepInside() {
-        for (p in listOf(p1, p2, marker)) {
-            val (x, y) = Geometry.clamp(Pt(p.x, p.y), box()); p.set(x, y)
+        val b = box()
+        fun clamp(p: PointF) {
+            val (x, y) = Geometry.clamp(Pt(p.x, p.y), b)
+            p.set(x, y)
         }
+        clamp(p1)
+        clamp(p2)
+        clamp(marker)
     }
 
-    // ---------- drawing ----------
+    private fun box(): Box = Box(rect.left, rect.top, rect.right, rect.bottom)
+    private fun pt(p: PointF): Pt = Pt(p.x, p.y)
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (!loaded) {
+            resetLayout()
+            save()
+        } else {
+            keepInside()
+        }
+        post { onChanged?.invoke() }
+    }
+
     override fun onDraw(c: Canvas) {
         if (hideAll) return
         val th = thickness * d
@@ -182,7 +216,9 @@ class OverlayView(ctx: Context) : View(ctx) {
         paint.pathEffect = null
 
         if (!rectHidden) {
-            paint.style = Paint.Style.STROKE; paint.strokeWidth = 2.25f * d; paint.color = Color.WHITE
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2.25f * d
+            paint.color = Color.WHITE
             c.drawRoundRect(rect, 22f * d, 22f * d, paint)
         }
 
@@ -233,7 +269,7 @@ class OverlayView(ctx: Context) : View(ctx) {
                 }
             }
 
-            // رسم خط مسار ارتداد الكرة البيضاء بهالة بيضاء مستقلة لا تتأثر بالثيمات
+            // رسم مسار ارتداد الكرة البيضاء بهالة متوهجة
             val cueTangentSegs = Geometry.cueTangentSegments(pt(p1), pt(p2), Pt(dx / len, dy / len), b, 1, cueForce)
             for (s in cueTangentSegs) {
                 paint.pathEffect = null
@@ -258,16 +294,10 @@ class OverlayView(ctx: Context) : View(ctx) {
         if (flags["ghost"] == true) info = drawGhost(c, b)
 
         if (!aimHidden || flags["ghost"] == true) {
-            for ((p, label) in listOf(p1 to "C", p2 to "8")) {
-                val qx = p.x + touchOffX
-                touchCircle(c, qx, p.y, touchR)
-                text.textSize = 10f * d; text.isFakeBoldText = true
-                c.drawText(label, qx, p.y - touchR - 4f * d, text)
-                glowDot(c, p.x, p.y)
-            }
+            glowDot(c, p1.x, p1.y)
+            glowDot(c, p2.x, p2.y)
         }
         if (flags["lines"] == true) {
-            touchCircle(c, marker.x + touchOffX, marker.y, touchR)
             glowDot(c, marker.x, marker.y)
         }
 
@@ -284,11 +314,6 @@ class OverlayView(ctx: Context) : View(ctx) {
         if (flags["hud"] == true) drawHud(c, info, segs, snapped)
     }
 
-    private fun glowAlpha(base: Int): Int {
-        val f = (glowStep / 10f).coerceIn(0f, 1f)
-        return (base * f).roundToInt()
-    }
-
     private fun glowLine(c: Canvas, ax: Float, ay: Float, bx: Float, by: Float, rgb: Int, outerA: Int, innerA: Int) {
         if (flags["glow"] != true || glowStep <= 0) return
         val k = 1f + glowSizeStep / 10f
@@ -302,7 +327,9 @@ class OverlayView(ctx: Context) : View(ctx) {
     }
 
     private fun line(c: Canvas, ax: Float, ay: Float, bx: Float, by: Float, w: Float, rgb: Int) {
-        paint.style = Paint.Style.STROKE; paint.strokeWidth = w; paint.color = rgb
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = w
+        paint.color = rgb
         c.drawLine(ax, ay, bx, by, paint)
     }
 
@@ -311,16 +338,15 @@ class OverlayView(ctx: Context) : View(ctx) {
         c.drawCircle(x, y, r, paint)
     }
 
-    private fun touchCircle(c: Canvas, x: Float, y: Float, r: Float) {
-        paint.style = Paint.Style.FILL; paint.color = Color.argb(85, 239, 68, 68)
-        c.drawCircle(x, y, r, paint)
-        ring(c, x, y, r, Color.WHITE, 2f * d)
-    }
-
     private fun glowDot(c: Canvas, x: Float, y: Float) {
         paint.style = Paint.Style.FILL; paint.color = Color.WHITE
         c.drawCircle(x, y, 4f * d, paint)
         ring(c, x, y, 6.5f * d, Color.argb(160, 0, 0, 0), 1.2f * d)
+    }
+
+    private fun glowAlpha(base: Int): Int {
+        val factor = (glowStep / 10f).coerceIn(0f, 1f)
+        return (base * factor).roundToInt().coerceIn(0, 255)
     }
 
     private fun drawGhost(c: Canvas, b: Box): Triple<Int, Float, Float>? {
@@ -375,19 +401,13 @@ class OverlayView(ctx: Context) : View(ctx) {
         if (snapped) parts.add(if (ar) "تم الالتصاق" else "Snapped")
         parts.add("${if (ar) "قوة" else "P"}: $cueForce")
 
-        val txt = parts.joinToString(" | ")
-        text.textSize = 10f * d; text.isFakeBoldText = false
-        val tw = text.measureText(txt)
-        val padH = 10f * d
-        val padV = 4f * d
-        val boxW = tw + padH * 2
-        val boxH = 14f * d + padV * 2
-        val cx = rect.centerX()
-        val cy = rect.top - boxH / 2 - 4f * d
-        val hr = RectF(cx - boxW / 2, cy - boxH / 2, cx + boxW / 2, cy + boxH / 2)
-        c.drawRoundRect(hr, 6f * d, 6f * d, hudBg)
-        c.drawRoundRect(hr, 6f * d, 6f * d, hudBorder)
-        c.drawText(txt, cx, cy + 4f * d, text)
+        val s = parts.joinToString(" | ")
+        text.textSize = 12f * d
+        val w = text.measureText(s) + 36f * d
+        val x = (width - w) / 2
+        paint.style = Paint.Style.FILL; paint.color = Color.argb(215, 15, 17, 23)
+        c.drawRoundRect(x, 12f * d, x + w, 40f * d, 14f * d, 14f * d, paint)
+        c.drawText(s, width / 2f, 31f * d, text)
     }
 
     private fun pulse(): Float {
@@ -397,16 +417,6 @@ class OverlayView(ctx: Context) : View(ctx) {
 
     private fun rgba(a: Int) = (color and 0x00FFFFFF) or ((a and 0xFF) shl 24)
 
-    fun flashToast(c: Canvas, s: String) {
-        text.textSize = 12f * d; text.isFakeBoldText = true
-        val w = text.measureText(s) + 36f * d
-        val x = (width - w) / 2
-        paint.style = Paint.Style.FILL; paint.color = Color.argb(215, 15, 17, 23)
-        c.drawRoundRect(x, 12f * d, x + w, 40f * d, 14f * d, 14f * d, paint)
-        c.drawText(s, width / 2f, 31f * d, text)
-    }
-
-    // ---------- persistence ----------
     fun save() {
         prefs.edit().apply {
             putFloat("l", rect.left); putFloat("t", rect.top); putFloat("r", rect.right); putFloat("b", rect.bottom)
