@@ -270,24 +270,14 @@ class OverlayView(ctx: Context) : View(ctx) {
                 }
             }
 
-            // رسم خط مسار ارتداد الكرة البيضاء بهالة بيضاء شفافة مستقلة لا تتغير مع الثيمات
+            // رسم خط مسار ارتداد الكرة البيضاء: هالة بلون أبيض شفاف فقط بدون أسهم وعرضها كعرض الكرة البيضاء
             val cueTangentSegs = Geometry.cueTangentSegments(pt(p1), pt(p2), Pt(dx / len, dy / len), b, 1, cueForce)
             for (s in cueTangentSegs) {
                 paint.pathEffect = null
                 paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 10f * d
-                paint.color = Color.argb(65, 255, 255, 255)
+                paint.strokeWidth = 2f * ballR
+                paint.color = Color.argb(60, 255, 255, 255)
                 c.drawLine(s.first.first, s.first.second, s.second.first, s.second.second, paint)
-
-                paint.strokeWidth = 6f * d
-                paint.color = Color.argb(110, 255, 255, 255)
-                c.drawLine(s.first.first, s.first.second, s.second.first, s.second.second, paint)
-
-                paint.pathEffect = DashPathEffect(floatArrayOf(8f * d, 6f * d), 0f)
-                paint.strokeWidth = max(2.2f * d, th * 0.8f)
-                paint.color = Color.WHITE
-                c.drawLine(s.first.first, s.first.second, s.second.first, s.second.second, paint)
-                paint.pathEffect = null
             }
         }
 
@@ -364,8 +354,8 @@ class OverlayView(ctx: Context) : View(ctx) {
             val cut = Lang.t(context, "hud_cut")
             val pk = Lang.t(context, "hud_pocket")
             parts.add(
-                if (ar) "$cut ${info.second.toInt()}° - $pk ${info.first}"
-                else "$cut ${info.second.toInt()}° > $pk ${info.first}"
+                if (ar) "$cut ${info.second.toInt()}\u00B0 - $pk ${info.first}"
+                else "$cut ${info.second.toInt()}\u00B0 > $pk ${info.first}"
             )
             parts.add(diffText(Geometry.difficulty(info.second, info.third, rect.width())))
         }
