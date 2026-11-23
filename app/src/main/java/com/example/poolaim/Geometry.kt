@@ -106,7 +106,8 @@ object Geometry {
     /**
      * حساب مسار ارتداد الكرة البيضاء بعد الاصطدام (Tangent Line) ممتداً حتى وسائد الطاولة.
      * نقطة البداية تقع في مركز الكرة البيضاء لحظة ملامستها للكرة المستهدفة،
-     * أي بإزاحة مسافة قطر كرة كامل (2 * ballR) خلف مركز الكرة المستهدفة obj في اتجاه خط التصويب المعاكس.
+     * أي بإزاحة مسافة قطر كرة كامل (2 * ballR) خلف مركز الكرة المستهدفة obj في اتجاه خط التصويب المعاكس:
+     * P_contact = obj - 2 * ballR * u_target
      */
     fun cueTangentSegments(cue: Pt, obj: Pt, dir: Pt, r: Box, maxBanks: Int = 2, cueForce: Int = 1): List<Pair<Pt, Pt>> {
         val dx = dir.first
