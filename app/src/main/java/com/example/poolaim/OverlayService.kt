@@ -509,10 +509,9 @@ class OverlayService : Service() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
-        row.addView(tv(title, if (bold) 12f else 11f, Color.WHITE, bold),
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(tv(title, if (bold) 12f else 11f, Color.WHITE, bold))
         val cb = CheckBox(this).apply {
             isChecked = checked
             buttonTintList = ColorStateList.valueOf(Color.WHITE)
