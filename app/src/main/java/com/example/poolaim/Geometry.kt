@@ -50,7 +50,7 @@ object Geometry {
         vx /= initialLen
         vy /= initialLen
 
-        // نصف قطر الكرة وإزاحة وسادة المطاط الدقيقة للعبة
+        // ضبط نصف القطر وإزاحة وسادة المطاط الدقيقة للعبة
         val ballR = (r.r - r.l) * 0.0175f
         val boundL = r.l + ballR
         val boundR = r.r - ballR
@@ -103,12 +103,8 @@ object Geometry {
         return out
     }
 
-    /**
-     * حساب مسار ارتداد الكرة البيضاء بزاوية 90 درجة (Tangent Line)
-     * نقطة الانطلاق تقع في مركز الكرة البيضاء لحظة ملامستها للكرة المستهدفة
-     * أي بمسافة قطر كرة كامل (2 * ballR) خلف مركز الكرة المستهدفة.
-     */
-    fun cueTangentSegments(cue: Pt, obj: Pt, dir: Pt, r: Box, maxBanks: Int = 2, cueForce: Int = 1): List<Pair<Pt, Pt>> {
+    // حساب مسار الكرة البيضاء المرتدة بعد الاصطدام (Tangent Line) بمسافة كرة خلف الكرة المستهدفة
+    fun cueTangentSegments(cue: Pt, obj: Pt, dir: Pt, r: Box, maxBanks: Int = 1, cueForce: Int = 1): List<Pair<Pt, Pt>> {
         val dx = dir.first
         val dy = dir.second
         val len = hypot(dx, dy)
@@ -119,12 +115,12 @@ object Geometry {
 
         val ballR = (r.r - r.l) * 0.0175f
 
-        // مركز الكرة البيضاء عند لحظة الاصطدام الدقيقة (كرة الشبح التلامسية)
+        // نقطة مركز الكرة البيضاء لحظة ملامستها للكرة المستهدفة
         val contactX = obj.first - nx * 2f * ballR
         val contactY = obj.second - ny * 2f * ballR
         val contactPt = Pt(contactX, contactY)
 
-        // اتجاه زاوية الارتداد 90 درجة بالنسبة لخط اقتراب الكرة البيضاء
+        // إزاحة زاوية الارتداد 90 درجة للكرة البيضاء
         val approachX = obj.first - cue.first
         val approachY = obj.second - cue.second
         val cross = approachX * ny - approachY * nx
