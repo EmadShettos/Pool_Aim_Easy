@@ -2,7 +2,6 @@ package com.example.poolaim
 
 import android.content.Context
 import android.graphics.*
-import android.view.MotionEvent
 import android.view.View
 import kotlin.math.*
 
@@ -18,19 +17,19 @@ class OverlayView(ctx: Context) : View(ctx) {
     var themeIdx = 0
     var cueForce = 1
     var locked = false
-    var hideAll = false
-    var aimHidden = false
     var rectHidden = false
+    var aimHidden = false
+    var hideAll = false
 
-    var ghostDistStep = 0
-    var ghostSizeStep = 0
+    var ghostDistStep = 6
+    var ghostSizeStep = 9
     var glowStep = 5
-    var glowSizeStep = 5
+    var glowSizeStep = 0
 
-    private val p1 = PointF()
-    private val p2 = PointF()
-    private val marker = PointF()
-    private val rect = RectF()
+    val p1 = PointF()
+    val p2 = PointF()
+    val marker = PointF()
+    val rect = RectF()
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER }
@@ -38,11 +37,6 @@ class OverlayView(ctx: Context) : View(ctx) {
     private val hudBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE; strokeWidth = 1.2f * d; color = Color.argb(120, 255, 255, 255)
     }
-
-    private var activePt: Any? = null
-    private var touchMode = ""
-    private var lastX = 0f
-    private var lastY = 0f
 
     private val touchR get() = 18f * d
     private val touchOffX get() = -32f * d
@@ -52,34 +46,134 @@ class OverlayView(ctx: Context) : View(ctx) {
     private val ghostDistPx get() = ballR * (2f + ghostDistStep * 0.15f)
     private val snapThresh get() = pocketR * 2.2f
 
+    private var loaded = false
+    var onChanged: (() -> Unit)? = null
+
     init { load(); flags["animate"] = false }
 
     private val color get() = THEMES[themeIdx].second
 
-    fun toggle(k: String) { flags[k] = !(flags[k] ?: false); save(); invalidate() }
-    fun nextTheme(): String { themeIdx = (themeIdx + 1) % THEMES.size; save(); invalidate(); return THEMES[themeIdx].first }
-    fun changeThickness(step: Float) { thickness = (thickness + step).coerceIn(1f, 8f); save(); invalidate() }
-
-    fun setAimHiddenState(h: Boolean) { aimHidden = h; invalidate() }
-    fun setRectHiddenState(h: Boolean) { rectHidden = h; invalidate() }
-    fun setHideAllState(h: Boolean) { hideAll = h; invalidate() }
-    fun setLockedState(l: Boolean) { locked = l; invalidate() }
-
     private fun box() = Box(rect.left, rect.top, rect.right, rect.bottom)
     private fun pt(p: PointF) = Pt(p.x, p.y)
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
-        if (rect.isEmpty) {
-            val padX = w * 0.08f
-            val padY = h * 0.12f
-            rect.set(padX, padY, w - padX, h - padY)
-            p1.set(rect.centerX() - 60f * d, rect.centerY())
-            p2.set(rect.centerX() + 60f * d, rect.centerY())
-            marker.set(rect.centerX(), rect.centerY() - 40f * d)
+    private fun screenW() = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
+    private fun screenH() = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
+
+    // الوضع الافتراضي للعبة 8 Ball Pool
+    fun applyGameLayout() {
+        val w = screenW()
+        val h = screenH()
+        rect.set(w * 0.197f, h * 0.241f, w * 0.803f, h * 0.904f)
+        p1.set(rect.left + rect.width() * 0.25f, rect.centerY())
+        p2.set(rect.right - rect.width() * 0.25f, rect.centerY())
+        marker.set(rect.centerX(), rect.centerY())
+        save()
+        invalidate()
+        onChanged?.invoke()
+    }
+
+    fun resetLayout() {
+        val w = screenW()
+        val h = screenH()
+
+        if (w > h) {
+            rect.set(w * 0.197f, h * 0.241f, w * 0.803f, h * 0.904f)
+        } else {
+            val tw = w * 0.92f
+            val th = tw / 2.0f
+            val l = (w - tw) / 2f
+            val t = h * 0.28f
+            rect.set(l, t, l + tw, t + th)
+        }
+
+        p1.set(rect.left + rect.width() * 0.25f, rect.centerY())
+        p2.set(rect.right - rect.width() * 0.25f, rect.centerY())
+        marker.set(rect.centerX(), rect.centerY())
+        invalidate()
+        onChanged?.invoke()
+    }
+
+    fun rotateTable() {
+        val w = screenW()
+        val h = screenH()
+
+        if (w > h) {
+            applyGameLayout()
+            return
+        }
+
+        val nl = w - rect.right
+        val nr = w - rect.left
+        val nt = h - rect.bottom
+        val nb = h - rect.top
+        rect.set(nl, nt, nr, nb)
+
+        fun rot(p: PointF) {
+            p.set(w - p.x, h - p.y)
+        }
+        rot(p1)
+        rot(p2)
+        rot(marker)
+
+        save()
+        invalidate()
+        onChanged?.invoke()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        val orientationChanged = (ow > 0 && oh > 0) && ((ow > oh) != (w > h))
+        if (!loaded || orientationChanged) {
+            resetLayout()
+            loaded = true
+        }
+        onChanged?.invoke()
+    }
+
+    fun toggle(k: String) { flags[k] = !(flags[k] ?: false); flags["animate"] = false; save(); invalidate() }
+    fun nextTheme() { themeIdx = (themeIdx + 1) % THEMES.size; save(); invalidate() }
+    fun thicker(delta: Float) { thickness = (thickness + delta).coerceIn(1f, 10f); save(); invalidate() }
+
+    fun pos(key: String): PointF = when (key) {
+        "p1" -> PointF(p1.x, p1.y)
+        "p2" -> PointF(p2.x, p2.y)
+        "marker" -> PointF(marker.x, marker.y)
+        "tl" -> PointF(rect.left, rect.top)
+        else -> PointF(rect.right, rect.bottom)
+    }
+
+    fun touchPos(key: String): PointF {
+        val p = pos(key)
+        return if (key == "p1" || key == "p2" || key == "marker") PointF(p.x + touchOffX, p.y) else p
+    }
+
+    fun setPoint(key: String, x: Float, y: Float, final: Boolean) {
+        when (key) {
+            "p1", "p2" -> {
+                val (nx, ny) = Geometry.clamp(Pt(x, y), box())
+                (if (key == "p1") p1 else p2).set(nx, ny)
+            }
+            "marker" -> { val (nx, ny) = Geometry.clamp(Pt(x, y), box()); marker.set(nx, ny) }
+            "tl" -> {
+                rect.left = min(x.coerceIn(0f, width.toFloat()), rect.right - 120f * d)
+                rect.top = min(y.coerceIn(0f, height.toFloat()), rect.bottom - 80f * d)
+                keepInside()
+            }
+            "br" -> {
+                rect.right = max(x.coerceIn(0f, width.toFloat()), rect.left + 120f * d)
+                rect.bottom = max(y.coerceIn(0f, height.toFloat()), rect.top + 80f * d)
+                keepInside()
+            }
+        }
+        invalidate()
+    }
+
+    private fun keepInside() {
+        for (p in listOf(p1, p2, marker)) {
+            val (x, y) = Geometry.clamp(Pt(p.x, p.y), box()); p.set(x, y)
         }
     }
 
+    // ---------- drawing ----------
     override fun onDraw(c: Canvas) {
         if (hideAll) return
         val th = thickness * d
@@ -142,7 +236,6 @@ class OverlayView(ctx: Context) : View(ctx) {
             // رسم خط مسار ارتداد الكرة البيضاء بهالة بيضاء مستقلة لا تتأثر بالثيمات
             val cueTangentSegs = Geometry.cueTangentSegments(pt(p1), pt(p2), Pt(dx / len, dy / len), b, 1, cueForce)
             for (s in cueTangentSegs) {
-                // هالة بيضاء شفافة متوهجة
                 paint.pathEffect = null
                 paint.style = Paint.Style.STROKE
                 paint.strokeWidth = 10f * d
@@ -153,7 +246,6 @@ class OverlayView(ctx: Context) : View(ctx) {
                 paint.color = Color.argb(110, 255, 255, 255)
                 c.drawLine(s.first.first, s.first.second, s.second.first, s.second.second, paint)
 
-                // خط أبيض منقط/متقطع ناصع
                 paint.pathEffect = DashPathEffect(floatArrayOf(8f * d, 6f * d), 0f)
                 paint.strokeWidth = max(2.2f * d, th * 0.8f)
                 paint.color = Color.WHITE
@@ -192,6 +284,11 @@ class OverlayView(ctx: Context) : View(ctx) {
         if (flags["hud"] == true) drawHud(c, info, segs, snapped)
     }
 
+    private fun glowAlpha(base: Int): Int {
+        val f = (glowStep / 10f).coerceIn(0f, 1f)
+        return (base * f).roundToInt()
+    }
+
     private fun glowLine(c: Canvas, ax: Float, ay: Float, bx: Float, by: Float, rgb: Int, outerA: Int, innerA: Int) {
         if (flags["glow"] != true || glowStep <= 0) return
         val k = 1f + glowSizeStep / 10f
@@ -205,9 +302,7 @@ class OverlayView(ctx: Context) : View(ctx) {
     }
 
     private fun line(c: Canvas, ax: Float, ay: Float, bx: Float, by: Float, w: Float, rgb: Int) {
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = w
-        paint.color = rgb
+        paint.style = Paint.Style.STROKE; paint.strokeWidth = w; paint.color = rgb
         c.drawLine(ax, ay, bx, by, paint)
     }
 
@@ -226,11 +321,6 @@ class OverlayView(ctx: Context) : View(ctx) {
         paint.style = Paint.Style.FILL; paint.color = Color.WHITE
         c.drawCircle(x, y, 4f * d, paint)
         ring(c, x, y, 6.5f * d, Color.argb(160, 0, 0, 0), 1.2f * d)
-    }
-
-    private fun glowAlpha(base: Int): Int {
-        val factor = (glowStep / 10f).coerceIn(0f, 1f)
-        return (base * factor).roundToInt().coerceIn(0, 255)
     }
 
     private fun drawGhost(c: Canvas, b: Box): Triple<Int, Float, Float>? {
@@ -307,116 +397,54 @@ class OverlayView(ctx: Context) : View(ctx) {
 
     private fun rgba(a: Int) = (color and 0x00FFFFFF) or ((a and 0xFF) shl 24)
 
-    override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (hideAll) return false
-        val x = e.x; val y = e.y
-        when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                activePt = findTouchTarget(x, y)
-                lastX = x; lastY = y
-                return activePt != null
-            }
-            MotionEvent.ACTION_MOVE -> {
-                val dx = (x - lastX) * 0.75f
-                val dy = (y - lastY) * 0.75f
-                lastX = x; lastY = y
-                when (val t = activePt) {
-                    is PointF -> {
-                        t.offset(dx, dy)
-                        val (nx, ny) = Geometry.clamp(Pt(t.x, t.y), box())
-                        t.set(nx, ny)
-                    }
-                    is RectF -> {
-                        when (touchMode) {
-                            "rect_tl" -> { t.left += dx; t.top += dy }
-                            "rect_br" -> { t.right += dx; t.bottom += dy }
-                            "rect_drag" -> t.offset(dx, dy)
-                        }
-                    }
-                }
-                invalidate()
-                return true
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                activePt = null
-                touchMode = ""
-                save()
-                return true
-            }
-        }
-        return super.onTouchEvent(e)
+    fun flashToast(c: Canvas, s: String) {
+        text.textSize = 12f * d; text.isFakeBoldText = true
+        val w = text.measureText(s) + 36f * d
+        val x = (width - w) / 2
+        paint.style = Paint.Style.FILL; paint.color = Color.argb(215, 15, 17, 23)
+        c.drawRoundRect(x, 12f * d, x + w, 40f * d, 14f * d, 14f * d, paint)
+        c.drawText(s, width / 2f, 31f * d, text)
     }
 
-    private fun findTouchTarget(x: Float, y: Float): Any? {
-        val targets = mutableListOf<Pair<PointF, String>>()
-        if (!aimHidden || flags["ghost"] == true) {
-            targets.add(p1 to "p1")
-            targets.add(p2 to "p2")
-        }
-        if (flags["lines"] == true) {
-            targets.add(marker to "marker")
-        }
-        for ((p, _) in targets) {
-            val qx = p.x + touchOffX
-            if (hypot(x - qx, y - p.y) <= touchR * 1.5f) return p
-        }
-        if (!locked && !rectHidden) {
-            if (hypot(x - rect.left, y - rect.top) <= pocketR * 2f) { touchMode = "rect_tl"; return rect }
-            if (hypot(x - rect.right, y - rect.bottom) <= pocketR * 2f) { touchMode = "rect_br"; return rect }
-            if (rect.contains(x, y)) { touchMode = "rect_drag"; return rect }
-        }
-        return null
-    }
-
+    // ---------- persistence ----------
     fun save() {
         prefs.edit().apply {
-            putFloat("p1_x", p1.x); putFloat("p1_y", p1.y)
-            putFloat("p2_x", p2.x); putFloat("p2_y", p2.y)
-            putFloat("marker_x", marker.x); putFloat("marker_y", marker.y)
-            putFloat("r_l", rect.left); putFloat("r_t", rect.top)
-            putFloat("r_r", rect.right); putFloat("r_b", rect.bottom)
-            putFloat("thickness", thickness)
-            putInt("theme_idx", themeIdx)
+            putFloat("l", rect.left); putFloat("t", rect.top); putFloat("r", rect.right); putFloat("b", rect.bottom)
+            putFloat("p1x", p1.x); putFloat("p1y", p1.y); putFloat("p2x", p2.x); putFloat("p2y", p2.y)
+            putFloat("mx", marker.x); putFloat("my", marker.y)
+            putFloat("thick", thickness); putInt("theme", themeIdx)
             putInt("cue_force", cueForce)
-            putBoolean("locked", locked)
-            putInt("ghost_dist", ghostDistStep)
-            putInt("ghost_size", ghostSizeStep)
-            putInt("glow_step", glowStep)
-            putInt("glow_size", glowSizeStep)
-            for ((k, v) in flags) putBoolean("flag_$k", v)
+            putInt("gdist", ghostDistStep); putInt("gsize", ghostSizeStep)
+            putInt("glow_step", glowStep); putInt("glow_size", glowSizeStep)
+            putBoolean("locked", locked); putBoolean("rect_hidden", rectHidden)
+            putBoolean("aim_hidden", aimHidden); putBoolean("hide_all", hideAll)
+            for ((k, v) in flags) putBoolean("f_$k", v)
             apply()
         }
     }
 
-    fun load() {
-        p1.set(prefs.getFloat("p1_x", 0f), prefs.getFloat("p1_y", 0f))
-        p2.set(prefs.getFloat("p2_x", 0f), prefs.getFloat("p2_y", 0f))
-        marker.set(prefs.getFloat("marker_x", 0f), prefs.getFloat("marker_y", 0f))
-        rect.set(
-            prefs.getFloat("r_l", 0f), prefs.getFloat("r_t", 0f),
-            prefs.getFloat("r_r", 0f), prefs.getFloat("r_b", 0f)
-        )
-        thickness = prefs.getFloat("thickness", 3f)
-        themeIdx = prefs.getInt("theme_idx", 0).coerceIn(0, THEMES.size - 1)
-        cueForce = prefs.getInt("cue_force", 1).coerceIn(1, 10)
+    private fun load() {
+        ghostDistStep = prefs.getInt("gdist", 6).coerceIn(0, 10)
+        ghostSizeStep = prefs.getInt("gsize", 9).coerceIn(0, 9)
+        glowStep = prefs.getInt("glow_step", 5).coerceIn(0, 10)
+        glowSizeStep = prefs.getInt("glow_size", 0).coerceIn(0, 10)
         locked = prefs.getBoolean("locked", false)
-        ghostDistStep = prefs.getInt("ghost_dist", 0)
-        ghostSizeStep = prefs.getInt("ghost_size", 0)
-        glowStep = prefs.getInt("glow_step", 5)
-        glowSizeStep = prefs.getInt("glow_size", 5)
-        for (k in flags.keys.toList()) {
-            flags[k] = prefs.getBoolean("flag_$k", flags[k] ?: false)
-        }
-    }
-
-    fun resetTable() {
-        val w = width.toFloat(); val h = height.toFloat()
-        if (w <= 0 || h <= 0) return
-        val padX = w * 0.08f; val padY = h * 0.12f
-        rect.set(padX, padY, w - padX, h - padY)
-        p1.set(rect.centerX() - 60f * d, rect.centerY())
-        p2.set(rect.centerX() + 60f * d, rect.centerY())
-        marker.set(rect.centerX(), rect.centerY() - 40f * d)
-        save(); invalidate()
+        rectHidden = prefs.getBoolean("rect_hidden", false)
+        aimHidden = prefs.getBoolean("aim_hidden", false)
+        hideAll = prefs.getBoolean("hide_all", false)
+        thickness = prefs.getFloat("thick", 3f).coerceIn(1f, 10f)
+        themeIdx = prefs.getInt("theme", 0).coerceIn(0, THEMES.size - 1)
+        cueForce = prefs.getInt("cue_force", 1).coerceIn(1, 10)
+        for (k in flags.keys.toList()) flags[k] = prefs.getBoolean("f_$k", flags[k]!!)
+        if (!prefs.contains("l")) return
+        val l = prefs.getFloat("l", 0f); val t = prefs.getFloat("t", 0f)
+        val r = prefs.getFloat("r", 0f); val b = prefs.getFloat("b", 0f)
+        if (r - l < 120f * d || b - t < 80f * d) return
+        rect.set(l, t, r, b)
+        p1.set(prefs.getFloat("p1x", 0f), prefs.getFloat("p1y", 0f))
+        p2.set(prefs.getFloat("p2x", 0f), prefs.getFloat("p2y", 0f))
+        marker.set(prefs.getFloat("mx", 0f), prefs.getFloat("my", 0f))
+        keepInside()
+        loaded = true
     }
 }
