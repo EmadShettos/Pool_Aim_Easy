@@ -24,6 +24,7 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -50,10 +51,18 @@ class InstallResultReceiver : BroadcastReceiver() {
                     ctx.startActivity(confirm)
                 }
             }
-            PackageInstaller.STATUS_SUCCESS -> {}
+            PackageInstaller.STATUS_SUCCESS -> {
+                val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
+                if (launch != null) {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    ctx.startActivity(launch)
+                }
+            }
             else -> {
                 val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
-                Toast.makeText(ctx, "Update install failed: $msg", Toast.LENGTH_LONG).show()
+                MainActivity.instance?.runOnUiThread {
+                    MainActivity.instance?.onInstallError(msg)
+                }
             }
         }
     }
@@ -128,6 +137,52 @@ class BannerView(ctx: Context) : View(ctx) {
 }
 
 class MainActivity : Activity() {
+    companion object {
+        var instance: MainActivity? = null
+    }
+
+    fun onInstallError(msg: String) {
+        isInstalling = false
+        val f = File(cacheDir, "update.apk")
+        if (f.exists()) {
+            setStatus(if (ar()) "جارٍ فتح التثبيت..." else "Opening installer...")
+            installFallback(f)
+        } else {
+            setStatus(if (ar()) "فشل التثبيت: $msg" else "Install failed: $msg")
+        }
+    }
+
+    private fun installFallback(file: File) {
+        try {
+            val uri = Uri.parse("content://$packageName.apkprovider/update.apk")
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            // توجيه الـ Intent مباشرة إلى مثبت الحزم الرسمي للنظام لمنع ظهور تطبيقات مثل WPS أو SHAREit
+            val systemInstaller = listOf("com.google.android.packageinstaller", "com.android.packageinstaller")
+                .firstOrNull { pkg ->
+                    runCatching { packageManager.getPackageInfo(pkg, 0) }.isSuccess
+                }
+            if (systemInstaller != null) {
+                intent.setPackage(systemInstaller)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            // محاولة إطلاق عامة إذا كان اسم الحزمة يختلف على أجهزة مخصصة
+            try {
+                val uri = Uri.parse("content://$packageName.apkprovider/update.apk")
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(intent)
+            } catch (ex: Exception) {
+                setStatus(if (ar()) "تعذر فتح التثبيت: ${ex.message}" else "Could not open installer: ${ex.message}")
+            }
+        }
+    }
+
     private val gold = 0xFFFFD21F.toInt()
     private var scroll: ScrollView? = null
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -294,10 +349,8 @@ class MainActivity : Activity() {
             session.close()
         } catch (e: Exception) {
             isInstalling = false
-            setStatus(
-                if (ar()) "تعذر التثبيت، اضغط الزر للمحاولة مرة أخرى"
-                else "Install failed, tap the button to retry"
-            )
+            // الاحتياطي التلقائي بمثبت النظام مباشرة عبر ContentProvider
+            installFallback(file)
         }
     }
 
@@ -398,6 +451,23 @@ class MainActivity : Activity() {
         card.addView(styled(T("back_top"), 0xFF0B0B0B.toInt(), gold) { onTop() },
             LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(18) })
         return card
+    }
+
+    private fun openWhatsApp() {
+        val uri = Uri.parse("https://wa.me/201093532277")
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage("com.whatsapp"))
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, uri))
+            } catch (e2: Exception) {
+                Toast.makeText(
+                    this,
+                    if (Lang.isAr(this)) "تعذر فتح واتساب" else "Could not open WhatsApp",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
     }
 
     private fun switchLang(ar: Boolean) {
@@ -523,7 +593,7 @@ class MainActivity : Activity() {
         val strip = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setPadding(dp(64), dp(10), dp(64), dp(10))
             background = GradientDrawable().apply {
                 setColor(0xFF0B0B0B.toInt())
                 cornerRadius = dp(14).toFloat()
@@ -535,7 +605,34 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(8) })
-        root.addView(strip, LinearLayout.LayoutParams(
+        val goBtn = Button(this).apply {
+            text = if (isAr) "اذهب" else "Go"
+            isAllCaps = false
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.BLACK)
+            minWidth = 0
+            minHeight = 0
+            minimumWidth = 0
+            minimumHeight = 0
+            setPadding(0, 0, 0, 0)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(gold)
+                setStroke(dp(2), Color.WHITE)
+            }
+            setOnClickListener { openWhatsApp() }
+        }
+        val stripFrame = FrameLayout(this)
+        stripFrame.addView(strip, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
+        ))
+        stripFrame.addView(goBtn, FrameLayout.LayoutParams(dp(52), dp(52)).apply {
+            gravity = Gravity.CENTER_VERTICAL or (if (isAr) Gravity.LEFT else Gravity.RIGHT)
+            leftMargin = dp(10)
+            rightMargin = dp(10)
+        })
+        root.addView(stripFrame, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(14) })
 
@@ -558,6 +655,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
+        instance = this
         val y = getSharedPreferences(Lang.PREFS, MODE_PRIVATE).getInt("main_scroll", 0)
         build(y)
         checkForUpdates()
