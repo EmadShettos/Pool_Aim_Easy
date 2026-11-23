@@ -509,9 +509,10 @@ class OverlayService : Service() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
-        row.addView(tv(title, if (bold) 12f else 11f, Color.WHITE, bold))
+        row.addView(tv(title, if (bold) 12f else 11f, Color.WHITE, bold),
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         val cb = CheckBox(this).apply {
             isChecked = checked
             buttonTintList = ColorStateList.valueOf(Color.WHITE)
@@ -551,13 +552,13 @@ class OverlayService : Service() {
 
     private fun ghostPanel(open: Boolean): LinearLayout {
         val panel = panelBase(open)
-
+        
         val row1 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
-
+        
         val tvGhost = tv(T("m_ghost"), 11f, Color.WHITE, true)
         val cbGhost = CheckBox(this).apply {
             isChecked = view.flags["ghost"] == true
@@ -583,11 +584,11 @@ class OverlayService : Service() {
 
     private fun c8Panel(open: Boolean): LinearLayout {
         val panel = panelBase(open)
-
+        
         val rowTop = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_LTR
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
 
         val tvC8 = tv(T("m_c8"), 11f, Color.WHITE, true)
@@ -612,7 +613,7 @@ class OverlayService : Service() {
 
         rowTop.addView(tvC8)
         rowTop.addView(cbC8)
-        rowTop.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        rowTop.addView(View(this), LinearLayout.LayoutParams((12 * d).toInt(), 1))
         rowTop.addView(tvSnap)
         rowTop.addView(cbSnap)
         panel.addView(rowTop)
