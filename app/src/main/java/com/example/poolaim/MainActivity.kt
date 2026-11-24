@@ -198,8 +198,9 @@ class MainActivity : Activity() {
     private var statusText: String = ""
     private var statusView: TextView? = null
 
-    private val RELEASE_API = "https://api.github.com/repos/EmadShettos/Pool_Aim_Easy/releases/tags/latest"
-    private val FALLBACK_APK = "https://github.com/EmadShettos/Pool_Aim_Easy/releases/download/latest/EmadShettos-PoolAim.apk"
+    // القناة تتحدد وقت البناء: "latest" للنسخة الرسمية (main) و "test" لنسخة التجربة (Test)
+    private val RELEASE_API = "https://api.github.com/repos/EmadShettos/Pool_Aim_Easy/releases/tags/${BuildConfig.UPDATE_TAG}"
+    private val FALLBACK_APK = "https://github.com/EmadShettos/Pool_Aim_Easy/releases/download/${BuildConfig.UPDATE_TAG}/EmadShettos-PoolAim.apk"
     private val ACTION_INSTALL_RESULT = "com.example.poolaim.INSTALL_RESULT"
     private val PRIVACY_URL = "https://www.termsfeed.com/live/62a09e53-631e-42b3-b6dc-76bc545e19ba"
 
