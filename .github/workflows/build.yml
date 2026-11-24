@@ -1,7 +1,7 @@
 name: Build EmadShettos APK
 on:
   push:
-    branches: [main]
+    branches: [main, Test]
   workflow_dispatch:
 permissions:
   contents: write
@@ -33,6 +33,7 @@ jobs:
           name: EmadShettosDebug-APK
           path: EmadShettos-PoolAim.apk
       - uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
         with:
           tag_name: latest
           name: Latest build
