@@ -12,7 +12,7 @@
         android:allowBackup="true"
         android:icon="@drawable/pool_aim_icon"
         android:roundIcon="@drawable/pool_aim_icon"
-        android:label="Pool Aim Shettos"
+        android:label="${appLabel}"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
