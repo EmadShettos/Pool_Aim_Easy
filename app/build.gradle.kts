@@ -3,6 +3,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// القناة: "test" فقط عند البناء من فرع Test (يضبطها ملف build.yml)، وأي حالة أخرى = "latest" (النسخة الرسمية)
+val updateChannel: String = if (System.getenv("CHANNEL") == "test") "test" else "latest"
+
 base {
     archivesName.set("EmadShettos-PoolAim")
 }
@@ -17,6 +20,16 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+
+        // نسخة التجربة: اسم حزمة مختلف لتُثبَّت بجانب النسخة الرسمية دون أن تمسّها
+        applicationIdSuffix = if (updateChannel == "test") ".test" else ""
+        manifestPlaceholders["appLabel"] =
+            if (updateChannel == "test") "Pool Aim Shettos TEST" else "Pool Aim Shettos"
+        buildConfigField("String", "UPDATE_TAG", "\"$updateChannel\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     signingConfigs {
