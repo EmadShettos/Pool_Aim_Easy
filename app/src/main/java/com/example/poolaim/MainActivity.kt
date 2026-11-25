@@ -166,10 +166,10 @@ class MainActivity : Activity() {
                     }
                 }
                 if (url == null) return@thread
-                
+
                 val checkTime = if (assetTime > 0) assetTime else releasePublishedAt
                 val installedAt = packageManager.getPackageInfo(packageName, 0).lastUpdateTime
-                
+
                 val need = checkTime > (installedAt + 180_000L)
                 apkUrl = url
                 runOnUiThread {
@@ -422,8 +422,9 @@ class MainActivity : Activity() {
         }
         val enBtn = smallBtn("\uD83C\uDDEC\uD83C\uDDE7  ${T("lang_en_btn")}", 0xFF0B0B0B.toInt(), gold) { switchLang(false) }
         val arBtn = smallBtn("\uD83C\uDDF8\uD83C\uDDE6  ${T("lang_ar_btn")}", 0xFF0B0B0B.toInt(), gold) { switchLang(true) }
-        val exitBtn = smallBtn("\u2715  ${T("exit")}", 0xFF7F1D1D.toInt(), Color.WHITE) {
+        val exitBtn = smallBtn("✕  ${T("exit")}", 0xFF7F1D1D.toInt(), Color.WHITE) {
             stopService(Intent(this, OverlayService::class.java))
+            finishAffinity()
             finishAndRemoveTask()
         }
         val privacyBtn = smallBtn(
@@ -588,12 +589,12 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         checkForUpdates()
-        videoSlider?.resume()
+        videoSlider?.playCurrent()
     }
 
     override fun onPause() {
         super.onPause()
-        videoSlider?.pause()
+        videoSlider?.pauseCurrent()
     }
 
     override fun onDestroy() {
