@@ -1,7 +1,7 @@
 name: Build EmadShettos APK
 on:
   push:
-    branches: [main]
+    branches: [main, Test]
   workflow_dispatch:
 permissions:
   contents: write
@@ -21,6 +21,7 @@ jobs:
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/emadshettos.jks"
       - name: Build signed APK
         env:
+          CHANNEL: ${{ github.ref_name == 'Test' && 'test' || 'latest' }}
           KEYSTORE_PATH: ${{ runner.temp }}/emadshettos.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -32,8 +33,19 @@ jobs:
         with:
           name: EmadShettosDebug-APK
           path: EmadShettos-PoolAim.apk
-      - uses: softprops/action-gh-release@v2
+      - name: Publish official release (main only)
+        if: github.ref_name == 'main'
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Latest build
+          files: EmadShettos-PoolAim.apk
+      - name: Publish test release (Test only)
+        if: github.ref_name == 'Test'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: test
+          name: Test build
+          prerelease: true
+          target_commitish: ${{ github.sha }}
           files: EmadShettos-PoolAim.apk

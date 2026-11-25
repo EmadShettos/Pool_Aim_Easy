@@ -198,9 +198,11 @@ class MainActivity : Activity() {
     private var statusText: String = ""
     private var statusView: TextView? = null
 
-    private val RELEASE_API = "https://api.github.com/repos/EmadShettos/Pool_Aim_Easy/releases/tags/latest"
-    private val FALLBACK_APK = "https://github.com/EmadShettos/Pool_Aim_Easy/releases/download/latest/EmadShettos-PoolAim.apk"
+    // القناة تتحدد وقت البناء: "latest" للنسخة الرسمية (main) و "test" لنسخة التجربة (Test)
+    private val RELEASE_API = "https://api.github.com/repos/EmadShettos/Pool_Aim_Easy/releases/tags/${BuildConfig.UPDATE_TAG}"
+    private val FALLBACK_APK = "https://github.com/EmadShettos/Pool_Aim_Easy/releases/download/${BuildConfig.UPDATE_TAG}/EmadShettos-PoolAim.apk"
     private val ACTION_INSTALL_RESULT = "com.example.poolaim.INSTALL_RESULT"
+    private val PRIVACY_URL = "https://www.termsfeed.com/live/62a09e53-631e-42b3-b6dc-76bc545e19ba"
 
     private fun ar() = Lang.isAr(this)
 
@@ -388,6 +390,18 @@ class MainActivity : Activity() {
         startForegroundService(Intent(this, OverlayService::class.java))
     }
 
+    private fun openPrivacyPolicy() {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)))
+        } catch (e: Exception) {
+            Toast.makeText(
+                this,
+                if (ar()) "تعذر فتح سياسة الخصوصية" else "Could not open the privacy policy",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     private fun helpCard(onTop: () -> Unit): LinearLayout {
         val isAr = Lang.isAr(this)
         val card = LinearLayout(this).apply {
@@ -503,8 +517,24 @@ class MainActivity : Activity() {
             stopService(Intent(this, OverlayService::class.java))
             finishAndRemoveTask()
         }
-        val leftV = if (isAr) enBtn else exitBtn
-        val rightV = if (isAr) exitBtn else arBtn
+        val privacyBtn = smallBtn(
+            if (isAr) "سياسة الخصوصية" else "Privacy Policy",
+            0xFF0E5A6B.toInt(), Color.WHITE
+        ) { openPrivacyPolicy() }
+
+        // عمود واحد: زر الخروج في الأعلى وتحته زر سياسة الخصوصية بنفس العرض والحجم
+        val exitColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+        }
+        exitColumn.addView(exitBtn, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        exitColumn.addView(privacyBtn, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(6) })
+
+        val leftV: View = if (isAr) enBtn else exitColumn
+        val rightV: View = if (isAr) exitColumn else arBtn
         langRow.addView(leftV, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         langRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
