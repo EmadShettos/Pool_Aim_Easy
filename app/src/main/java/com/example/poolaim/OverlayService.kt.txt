@@ -551,13 +551,13 @@ class OverlayService : Service() {
 
     private fun ghostPanel(open: Boolean): LinearLayout {
         val panel = panelBase(open)
-        
+
         val row1 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
-        
+
         val tvGhost = tv(T("m_ghost"), 11f, Color.WHITE, true)
         val cbGhost = CheckBox(this).apply {
             isChecked = view.flags["ghost"] == true
@@ -583,7 +583,7 @@ class OverlayService : Service() {
 
     private fun c8Panel(open: Boolean): LinearLayout {
         val panel = panelBase(open)
-        
+
         val rowTop = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL

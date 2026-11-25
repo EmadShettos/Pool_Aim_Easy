@@ -101,6 +101,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         flags["glow"] = true
         flags["hud"] = true
         thickness = 2f
+        themeIdx = 0
         cueForce = 1
         glowStep = 4
         glowSizeStep = 5
@@ -116,30 +117,24 @@ class OverlayView(ctx: Context) : View(ctx) {
         val w = screenW()
         val h = screenH()
 
-        val rw = rect.width().coerceAtLeast(1f)
-        val rh = rect.height().coerceAtLeast(1f)
+        if (w > h) {
+            applyGameLayout()
+            return
+        }
 
-        // حفظ المواضع النسبية للنقاط داخل المستطيل قبل التدوير
-        val u1 = (p1.x - rect.left) / rw
-        val v1 = (p1.y - rect.top) / rh
-        val u2 = (p2.x - rect.left) / rw
-        val v2 = (p2.y - rect.top) / rh
-        val um = (marker.x - rect.left) / rw
-        val vm = (marker.y - rect.top) / rh
-
-        // تدوير أبعاد وموضع المستطيل 180 درجة حول مركز الشاشة
         val nl = w - rect.right
         val nr = w - rect.left
         val nt = h - rect.bottom
         val nb = h - rect.top
         rect.set(nl, nt, nr, nb)
 
-        // تدوير النقاط داخل المستطيل الجديد متناسبة تماماً مع وضعه الجديد دون إرجاعها للمنتصف
-        p1.set(rect.left + (1f - u1) * rect.width(), rect.top + (1f - v1) * rect.height())
-        p2.set(rect.left + (1f - u2) * rect.width(), rect.top + (1f - v2) * rect.height())
-        marker.set(rect.left + (1f - um) * rect.width(), rect.top + (1f - vm) * rect.height())
+        fun rot(p: PointF) {
+            p.set(w - p.x, h - p.y)
+        }
+        rot(p1)
+        rot(p2)
+        rot(marker)
 
-        keepInside()
         save()
         invalidate()
         onChanged?.invoke()
