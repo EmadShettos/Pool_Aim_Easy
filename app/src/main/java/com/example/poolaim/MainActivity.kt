@@ -1,11 +1,8 @@
 package com.example.poolaim
 
 import android.app.Activity
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInstaller
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -38,35 +35,6 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlin.concurrent.thread
 import kotlin.math.min
-
-class InstallResultReceiver : BroadcastReceiver() {
-    override fun onReceive(ctx: Context, intent: Intent) {
-        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
-        when (status) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                @Suppress("DEPRECATION")
-                val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-                if (confirm != null) {
-                    confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    ctx.startActivity(confirm)
-                }
-            }
-            PackageInstaller.STATUS_SUCCESS -> {
-                val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
-                if (launch != null) {
-                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                    ctx.startActivity(launch)
-                }
-            }
-            else -> {
-                val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
-                MainActivity.instance?.runOnUiThread {
-                    MainActivity.instance?.onInstallError(msg)
-                }
-            }
-        }
-    }
-}
 
 class BannerView(ctx: Context) : View(ctx) {
     private val d = resources.displayMetrics.density
@@ -141,48 +109,6 @@ class MainActivity : Activity() {
         var instance: MainActivity? = null
     }
 
-    fun onInstallError(msg: String) {
-        isInstalling = false
-        val f = File(cacheDir, "update.apk")
-        if (f.exists()) {
-            setStatus(if (ar()) "جارٍ فتح التثبيت..." else "Opening installer...")
-            installFallback(f)
-        } else {
-            setStatus(if (ar()) "فشل التثبيت: $msg" else "Install failed: $msg")
-        }
-    }
-
-    private fun installFallback(file: File) {
-        try {
-            val uri = Uri.parse("content://$packageName.apkprovider/update.apk")
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            // توجيه الـ Intent مباشرة إلى مثبت الحزم الرسمي للنظام لمنع ظهور تطبيقات مثل WPS أو SHAREit
-            val systemInstaller = listOf("com.google.android.packageinstaller", "com.android.packageinstaller")
-                .firstOrNull { pkg ->
-                    runCatching { packageManager.getPackageInfo(pkg, 0) }.isSuccess
-                }
-            if (systemInstaller != null) {
-                intent.setPackage(systemInstaller)
-            }
-            startActivity(intent)
-        } catch (e: Exception) {
-            // محاولة إطلاق عامة إذا كان اسم الحزمة يختلف على أجهزة مخصصة
-            try {
-                val uri = Uri.parse("content://$packageName.apkprovider/update.apk")
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                startActivity(intent)
-            } catch (ex: Exception) {
-                setStatus(if (ar()) "تعذر فتح التثبيت: ${ex.message}" else "Could not open installer: ${ex.message}")
-            }
-        }
-    }
-
     private val gold = 0xFFFFD21F.toInt()
     private var scroll: ScrollView? = null
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -190,19 +116,14 @@ class MainActivity : Activity() {
 
     private var isUpdateRequired = false
     private var isDownloading = false
-    private var isInstalling = false
-    private var pendingStart = false
-    private var pendingUpdate = false
     private var autoTried = false
     private var apkUrl: String? = null
     private var statusText: String = ""
     private var statusView: TextView? = null
     private var videoSlider: VideoSliderView? = null
 
-    // القناة تتحدد وقت البناء: "latest" للنسخة الرسمية (main) و "test" لنسخة التجربة (Test)
     private val RELEASE_API = "https://api.github.com/repos/EmadShettos/Pool_Aim_Easy/releases/tags/${BuildConfig.UPDATE_TAG}"
     private val FALLBACK_APK = "https://github.com/EmadShettos/Pool_Aim_Easy/releases/download/${BuildConfig.UPDATE_TAG}/EmadShettos-PoolAim.apk"
-    private val ACTION_INSTALL_RESULT = "com.example.poolaim.INSTALL_RESULT"
     private val PRIVACY_URL = "https://www.termsfeed.com/live/62a09e53-631e-42b3-b6dc-76bc545e19ba"
 
     private fun ar() = Lang.isAr(this)
@@ -219,7 +140,7 @@ class MainActivity : Activity() {
     }
 
     private fun checkForUpdates() {
-        if (isDownloading || isInstalling) return
+        if (isDownloading) return
         thread {
             try {
                 val conn = (URL(RELEASE_API).openConnection() as HttpURLConnection).apply {
@@ -231,7 +152,9 @@ class MainActivity : Activity() {
                 }
                 if (conn.responseCode != 200) return@thread
                 val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                val assets = JSONObject(resp).getJSONArray("assets")
+                val jsonObj = JSONObject(resp)
+                val releasePublishedAt = parseTime(jsonObj.optString("published_at"))
+                val assets = jsonObj.getJSONArray("assets")
                 var url: String? = null
                 var assetTime = 0L
                 for (i in 0 until assets.length()) {
@@ -242,9 +165,13 @@ class MainActivity : Activity() {
                         break
                     }
                 }
-                if (url == null || assetTime == 0L) return@thread
+                if (url == null) return@thread
+
+                val checkTime = if (assetTime > 0) assetTime else releasePublishedAt
                 val installedAt = packageManager.getPackageInfo(packageName, 0).lastUpdateTime
-                val need = assetTime > installedAt
+
+                // إضافة فارق سماح زمني قدره 3 دقائق لمنع التكرار اللانهائي بعد التثبيت مباشرة
+                val need = checkTime > (installedAt + 180_000L)
                 apkUrl = url
                 runOnUiThread {
                     if (need != isUpdateRequired) {
@@ -262,9 +189,8 @@ class MainActivity : Activity() {
     }
 
     private fun startUpdateFlow() {
-        if (isDownloading || isInstalling) return
-        if (!packageManager.canRequestPackageInstalls()) {
-            pendingUpdate = true
+        if (isDownloading) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
             Toast.makeText(
                 this,
                 if (ar()) "فعّل إذن تثبيت التطبيقات لهذا التطبيق ثم ارجع" else "Allow Install unknown apps for this app, then come back",
@@ -314,7 +240,8 @@ class MainActivity : Activity() {
                 tmp.renameTo(out)
                 runOnUiThread {
                     isDownloading = false
-                    installApk(out)
+                    setStatus(if (ar()) "جارٍ فتح التثبيت..." else "Opening installer...")
+                    installApkDirect(out)
                 }
             } catch (e: Exception) {
                 isDownloading = false
@@ -326,34 +253,16 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun installApk(file: File) {
+    private fun installApkDirect(file: File) {
         try {
-            isInstalling = true
-            setStatus(if (ar()) "جارٍ التثبيت..." else "Installing...")
-            val pi = packageManager.packageInstaller
-            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-            params.setAppPackageName(packageName)
-            if (Build.VERSION.SDK_INT >= 31) {
-                params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            val uri = Uri.parse("content://$packageName.apkprovider/update.apk")
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            val id = pi.createSession(params)
-            val session = pi.openSession(id)
-            file.inputStream().use { ins ->
-                session.openWrite("update.apk", 0, file.length()).use { os ->
-                    ins.copyTo(os)
-                    session.fsync(os)
-                }
-            }
-            val intent = Intent(this, InstallResultReceiver::class.java).setAction(ACTION_INSTALL_RESULT)
-            val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
-            val pending = PendingIntent.getBroadcast(this, id, intent, flags)
-            session.commit(pending.intentSender)
-            session.close()
+            startActivity(intent)
         } catch (e: Exception) {
-            isInstalling = false
-            // الاحتياطي التلقائي بمثبت النظام مباشرة عبر ContentProvider
-            installFallback(file)
+            setStatus(if (ar()) "تعذر فتح التثبيت: ${e.message}" else "Could not open installer: ${e.message}")
         }
     }
 
@@ -439,7 +348,7 @@ class MainActivity : Activity() {
             "5) When an update is released, the update card appears and download/install starts automatically. If an install confirmation appears, tap Install."
         }
         card.addView(label(installText, 13f, soft, false, false),
-            LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(6) })
+            LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(6) } handicapping? No)
 
         card.addView(label(if (isAr) "ثانياً: كيف تلعب" else "Step 2: How to play", 16f, gold, true, true),
             LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(20) })
@@ -523,7 +432,6 @@ class MainActivity : Activity() {
             0xFF0E5A6B.toInt(), Color.WHITE
         ) { openPrivacyPolicy() }
 
-        // عمود واحد: زر الخروج في الأعلى وتحته زر سياسة الخصوصية بنفس العرض والحجم
         val exitColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutDirection = View.LAYOUT_DIRECTION_LTR
@@ -544,7 +452,6 @@ class MainActivity : Activity() {
         root.addView(langRow, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
-        // لوحة استعراض الفيديوهات التعليمية (متحركة تلقائياً مع دوائر التمرير السفلية)
         val slider = VideoSliderView(this)
         videoSlider = slider
         root.addView(slider, LinearLayout.LayoutParams(
@@ -615,7 +522,6 @@ class MainActivity : Activity() {
                 return@styled
             }
             if (!Settings.canDrawOverlays(this)) {
-                pendingStart = true
                 Toast.makeText(this, T("grant_first"), Toast.LENGTH_LONG).show()
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             } else {
@@ -643,91 +549,57 @@ class MainActivity : Activity() {
         }
         strip.addView(label(T("dev"), 14f, gold, true, true))
         strip.addView(label(T("whatsapp"), 13f, 0xFFEAEAEA.toInt(), false, true),
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(8) })
-        val goBtn = Button(this).apply {
-            text = if (isAr) "اذهب" else "Go"
-            isAllCaps = false
-            textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.BLACK)
-            minWidth = 0
-            minHeight = 0
-            minimumWidth = 0
-            minimumHeight = 0
-            setPadding(0, 0, 0, 0)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(gold)
-                setStroke(dp(2), Color.WHITE)
-            }
-            setOnClickListener { openWhatsApp() }
-        }
-        val stripFrame = FrameLayout(this)
-        stripFrame.addView(strip, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
-        ))
-        stripFrame.addView(goBtn, FrameLayout.LayoutParams(dp(52), dp(52)).apply {
-            gravity = Gravity.CENTER_VERTICAL or (if (isAr) Gravity.LEFT else Gravity.RIGHT)
-            leftMargin = dp(10)
-            rightMargin = dp(10)
-        })
-        root.addView(stripFrame, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(14) })
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(2) })
 
-        val bannerW = resources.displayMetrics.widthPixels - dp(12)
-        val bannerH = (bannerW * 1.16f).toInt()
-        root.addView(BannerView(this), LinearLayout.LayoutParams(bannerW, bannerH).apply {
-            topMargin = dp(12)
-            leftMargin = -dp(10)
-            rightMargin = -dp(10)
+        val goBtn = styled(T("go"), gold, Color.BLACK) { openWhatsApp() }.apply {
+            minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val stripRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        stripRow.addView(strip, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        stripRow.addView(goBtn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            marginStart = dp(8)
         })
+        root.addView(stripRow, lp())
+
+        root.addView(BannerView(this), LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(260)
+        ).apply { topMargin = dp(14) })
 
         root.addView(card, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(16) })
+        ).apply { topMargin = dp(14) })
 
         sv.addView(root)
         setContentView(sv)
-        sv.post { sv.scrollTo(0, restoreY) }
+        if (restoreY > 0) sv.post { sv.scrollTo(0, restoreY) }
     }
 
-    override fun onCreate(s: Bundle?) {
-        super.onCreate(s)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
         instance = this
-        val y = getSharedPreferences(Lang.PREFS, MODE_PRIVATE).getInt("main_scroll", 0)
-        build(y)
-        checkForUpdates()
+        build(0)
     }
 
     override fun onResume() {
         super.onResume()
-        if (pendingStart) {
-            pendingStart = false
-            if (!isUpdateRequired && Settings.canDrawOverlays(this)) {
-                launchOverlay()
-            }
-        }
-        if (pendingUpdate && packageManager.canRequestPackageInstalls()) {
-            pendingUpdate = false
-            startUpdateFlow()
-        }
         checkForUpdates()
-        videoSlider?.resume()
+        videoSlider?.playCurrent()
     }
 
     override fun onPause() {
-        videoSlider?.pause()
-        scroll?.let {
-            getSharedPreferences(Lang.PREFS, MODE_PRIVATE).edit().putInt("main_scroll", it.scrollY).apply()
-        }
         super.onPause()
+        videoSlider?.pauseCurrent()
     }
 
     override fun onDestroy() {
-        videoSlider?.release()
         super.onDestroy()
+        if (instance == this) instance = null
+        videoSlider?.release()
     }
 }
