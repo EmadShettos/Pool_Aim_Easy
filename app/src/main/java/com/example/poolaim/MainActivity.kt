@@ -625,6 +625,7 @@ class MainActivity : Activity() {
             sv.post { sv.smoothScrollTo(0, card.top) }
         }, lp())
 
+        // مستطيل المطور الأصلي الكلاسيكي مع زر الواتس في داخله كما في نسخة main تماماً
         val strip = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
