@@ -241,7 +241,7 @@ class MainActivity : Activity() {
                 }
                 if (url == null || assetTime == 0L) return@thread
                 val installedAt = packageManager.getPackageInfo(packageName, 0).lastUpdateTime
-                val need = assetTime > (installedAt + 180_000L)
+                val need = assetTime > (installedAt + 300_000L)
                 apkUrl = url
                 runOnUiThread {
                     if (need != isUpdateRequired) {
@@ -625,45 +625,41 @@ class MainActivity : Activity() {
             sv.post { sv.smoothScrollTo(0, card.top) }
         }, lp())
 
-        // مستطيل المطور الأصلي بتصميمه الموحد: الزر الدائري Go على اليمين والمعلومات في المنتصف بالداخل
         val strip = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_LTR
-            setPadding(dp(16), dp(10), dp(16), dp(10))
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(64), dp(10), dp(64), dp(10))
             background = GradientDrawable().apply {
                 setColor(0xFF0B0B0B.toInt())
                 cornerRadius = dp(14).toFloat()
                 setStroke(dp(2), gold)
             }
         }
-        val devCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-        }
-        devCol.addView(label(T("dev"), 14f, gold, true, true))
-        devCol.addView(label(T("whatsapp"), 13f, 0xFFEAEAEA.toInt(), false, true),
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(2) })
-        strip.addView(devCol, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-
+        strip.addView(label(T("dev"), 14f, gold, true, true))
+        strip.addView(label(T("whatsapp"), 13f, 0xFFEAEAEA.toInt(), false, true),
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(8) })
         val goBtn = Button(this).apply {
-            text = "Go"
+            text = if (isAr) "اذهب" else "Go"
             isAllCaps = false
-            textSize = 14f
+            textSize = 12f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.BLACK)
             minWidth = 0
             minHeight = 0
-            minimumWidth = dp(46)
-            minimumHeight = dp(46)
-            setPadding(dp(10), dp(6), dp(10), dp(6))
+            minimumWidth = 0
+            minimumHeight = 0
+            setPadding(dp(20), dp(4), dp(20), dp(4))
             background = GradientDrawable().apply {
                 setColor(gold)
-                cornerRadius = dp(23).toFloat()
+                cornerRadius = dp(10).toFloat()
             }
             setOnClickListener { openWhatsApp() }
         }
-        strip.addView(goBtn, LinearLayout.LayoutParams(dp(46), dp(46)))
+        strip.addView(goBtn, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(8) })
         root.addView(strip, lp())
 
         root.addView(BannerView(this), LinearLayout.LayoutParams(
