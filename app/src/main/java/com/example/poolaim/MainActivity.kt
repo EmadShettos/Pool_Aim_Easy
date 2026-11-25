@@ -197,6 +197,7 @@ class MainActivity : Activity() {
     private var apkUrl: String? = null
     private var statusText: String = ""
     private var statusView: TextView? = null
+    private var videoSlider: VideoSliderView? = null
 
     // القناة تتحدد وقت البناء: "latest" للنسخة الرسمية (main) و "test" لنسخة التجربة (Test)
     private val RELEASE_API = "https://api.github.com/repos/EmadShettos/Pool_Aim_Easy/releases/tags/${BuildConfig.UPDATE_TAG}"
@@ -543,6 +544,16 @@ class MainActivity : Activity() {
         root.addView(langRow, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
+        // لوحة استعراض الفيديوهات التعليمية (متحركة تلقائياً مع دوائر التمرير السفلية)
+        val slider = VideoSliderView(this)
+        videoSlider = slider
+        root.addView(slider, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            topMargin = dp(14)
+            bottomMargin = dp(6)
+        })
+
         val card = helpCard { sv.smoothScrollTo(0, 0) }
 
         statusView = null
@@ -704,12 +715,19 @@ class MainActivity : Activity() {
             startUpdateFlow()
         }
         checkForUpdates()
+        videoSlider?.resume()
     }
 
     override fun onPause() {
+        videoSlider?.pause()
         scroll?.let {
             getSharedPreferences(Lang.PREFS, MODE_PRIVATE).edit().putInt("main_scroll", it.scrollY).apply()
         }
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        videoSlider?.release()
+        super.onDestroy()
     }
 }
