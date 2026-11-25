@@ -19,18 +19,18 @@ class OverlayView(ctx: Context) : View(ctx) {
     val marker = PointF()
     val flags = linkedMapOf(
         "lines" to true, "single" to false, "bank" to false, "double_bank" to true,
-        "ghost" to false, "hud" to true, "animate" to false, "snap" to false, "glow" to false
+        "ghost" to false, "hud" to true, "animate" to false, "snap" to false, "glow" to true
     )
-    var thickness = 1f
+    var thickness = 2f
     var themeIdx = 0
     var cueForce = 1
-    var locked = false
+    var locked = true
     var rectHidden = false
     var aimHidden = true
     var hideAll = false
     var ghostDistStep = 6
     var ghostSizeStep = 9
-    var glowStep = 3
+    var glowStep = 4
     var glowSizeStep = 5
     var onChanged: (() -> Unit)? = null
     private var loaded = false
@@ -98,13 +98,14 @@ class OverlayView(ctx: Context) : View(ctx) {
         flags["bank"] = false
         flags["double_bank"] = true
         flags["snap"] = false
-        flags["glow"] = false
+        flags["glow"] = true
         flags["hud"] = true
-        thickness = 1f
-        glowStep = 3
+        thickness = 2f
+        cueForce = 1
+        glowStep = 4
         glowSizeStep = 5
         aimHidden = true
-        locked = false
+        locked = true
         rectHidden = false
         hideAll = false
         resetLayout()
@@ -403,13 +404,13 @@ class OverlayView(ctx: Context) : View(ctx) {
     private fun load() {
         ghostDistStep = prefs.getInt("gdist", 6).coerceIn(0, 10)
         ghostSizeStep = prefs.getInt("gsize", 9).coerceIn(0, 9)
-        glowStep = prefs.getInt("glow_step", 3).coerceIn(0, 10)
+        glowStep = prefs.getInt("glow_step", 4).coerceIn(0, 10)
         glowSizeStep = prefs.getInt("glow_size", 5).coerceIn(0, 10)
-        locked = prefs.getBoolean("locked", false)
+        locked = prefs.getBoolean("locked", true)
         rectHidden = prefs.getBoolean("rect_hidden", false)
         aimHidden = prefs.getBoolean("aim_hidden", true)
         hideAll = prefs.getBoolean("hide_all", false)
-        thickness = prefs.getFloat("thick", 1f).coerceIn(1f, 10f)
+        thickness = prefs.getFloat("thick", 2f).coerceIn(1f, 10f)
         themeIdx = prefs.getInt("theme", 0).coerceIn(0, THEMES.size - 1)
         cueForce = prefs.getInt("cue_force", 1).coerceIn(1, 10)
         for (k in flags.keys.toList()) flags[k] = prefs.getBoolean("f_$k", flags[k]!!)
