@@ -166,11 +166,10 @@ class MainActivity : Activity() {
                     }
                 }
                 if (url == null) return@thread
-
+                
                 val checkTime = if (assetTime > 0) assetTime else releasePublishedAt
                 val installedAt = packageManager.getPackageInfo(packageName, 0).lastUpdateTime
-
-                // إضافة فارق سماح زمني قدره 3 دقائق لمنع التكرار اللانهائي بعد التثبيت مباشرة
+                
                 val need = checkTime > (installedAt + 180_000L)
                 apkUrl = url
                 runOnUiThread {
@@ -348,7 +347,7 @@ class MainActivity : Activity() {
             "5) When an update is released, the update card appears and download/install starts automatically. If an install confirmation appears, tap Install."
         }
         card.addView(label(installText, 13f, soft, false, false),
-            LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(6) } handicapping? No)
+            LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(6) })
 
         card.addView(label(if (isAr) "ثانياً: كيف تلعب" else "Step 2: How to play", 16f, gold, true, true),
             LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(20) })
@@ -589,12 +588,12 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         checkForUpdates()
-        videoSlider?.playCurrent()
+        videoSlider?.resume()
     }
 
     override fun onPause() {
         super.onPause()
-        videoSlider?.pauseCurrent()
+        videoSlider?.pause()
     }
 
     override fun onDestroy() {
