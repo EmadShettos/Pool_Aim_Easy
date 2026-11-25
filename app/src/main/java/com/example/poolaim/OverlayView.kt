@@ -19,19 +19,19 @@ class OverlayView(ctx: Context) : View(ctx) {
     val marker = PointF()
     val flags = linkedMapOf(
         "lines" to true, "single" to false, "bank" to false, "double_bank" to true,
-        "ghost" to true, "hud" to true, "animate" to false, "snap" to false, "glow" to false
+        "ghost" to false, "hud" to true, "animate" to false, "snap" to false, "glow" to false
     )
-    var thickness = 3f
+    var thickness = 1f
     var themeIdx = 0
     var cueForce = 1
     var locked = false
     var rectHidden = false
-    var aimHidden = false
+    var aimHidden = true
     var hideAll = false
     var ghostDistStep = 6
     var ghostSizeStep = 9
-    var glowStep = 5
-    var glowSizeStep = 0
+    var glowStep = 3
+    var glowSizeStep = 5
     var onChanged: (() -> Unit)? = null
     private var loaded = false
 
@@ -58,7 +58,6 @@ class OverlayView(ctx: Context) : View(ctx) {
     private fun screenW() = width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
     private fun screenH() = height.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.toFloat()
 
-    // الوضع الافتراضي للعبة 8 Ball Pool (قياس من لقطة الشاشة): الزاوية العلوية اليسرى والسفلية اليمنى
     fun applyGameLayout() {
         val w = screenW()
         val h = screenH()
@@ -90,6 +89,26 @@ class OverlayView(ctx: Context) : View(ctx) {
         marker.set(rect.centerX(), rect.centerY())
         invalidate()
         onChanged?.invoke()
+    }
+
+    fun resetToDefaults() {
+        flags["lines"] = true
+        flags["ghost"] = false
+        flags["single"] = false
+        flags["bank"] = false
+        flags["double_bank"] = true
+        flags["snap"] = false
+        flags["glow"] = false
+        flags["hud"] = true
+        thickness = 1f
+        glowStep = 3
+        glowSizeStep = 5
+        aimHidden = true
+        locked = false
+        rectHidden = false
+        hideAll = false
+        resetLayout()
+        save()
     }
 
     fun rotateTable() {
@@ -269,16 +288,6 @@ class OverlayView(ctx: Context) : View(ctx) {
                     c.drawCircle(s.second.first, s.second.second, 3.5f * d, paint)
                 }
             }
-
-            // رسم خط مسار ارتداد الكرة البيضاء: هالة بلون أبيض شفاف فقط بدون أسهم وعرضها كعرض الكرة البيضاء
-            val cueTangentSegs = Geometry.cueTangentSegments(pt(p1), pt(p2), Pt(dx / len, dy / len), b, 1, cueForce)
-            for (s in cueTangentSegs) {
-                paint.pathEffect = null
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 2f * ballR
-                paint.color = Color.argb(60, 255, 255, 255)
-                c.drawLine(s.first.first, s.first.second, s.second.first, s.second.second, paint)
-            }
         }
 
         var info: Triple<Int, Float, Float>? = null
@@ -394,13 +403,13 @@ class OverlayView(ctx: Context) : View(ctx) {
     private fun load() {
         ghostDistStep = prefs.getInt("gdist", 6).coerceIn(0, 10)
         ghostSizeStep = prefs.getInt("gsize", 9).coerceIn(0, 9)
-        glowStep = prefs.getInt("glow_step", 5).coerceIn(0, 10)
-        glowSizeStep = prefs.getInt("glow_size", 0).coerceIn(0, 10)
+        glowStep = prefs.getInt("glow_step", 3).coerceIn(0, 10)
+        glowSizeStep = prefs.getInt("glow_size", 5).coerceIn(0, 10)
         locked = prefs.getBoolean("locked", false)
         rectHidden = prefs.getBoolean("rect_hidden", false)
-        aimHidden = prefs.getBoolean("aim_hidden", false)
+        aimHidden = prefs.getBoolean("aim_hidden", true)
         hideAll = prefs.getBoolean("hide_all", false)
-        thickness = prefs.getFloat("thick", 3f).coerceIn(1f, 10f)
+        thickness = prefs.getFloat("thick", 1f).coerceIn(1f, 10f)
         themeIdx = prefs.getInt("theme", 0).coerceIn(0, THEMES.size - 1)
         cueForce = prefs.getInt("cue_force", 1).coerceIn(1, 10)
         for (k in flags.keys.toList()) flags[k] = prefs.getBoolean("f_$k", flags[k]!!)
