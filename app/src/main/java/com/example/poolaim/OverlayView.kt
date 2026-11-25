@@ -101,6 +101,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         flags["glow"] = true
         flags["hud"] = true
         thickness = 2f
+        themeIdx = 0
         cueForce = 1
         glowStep = 4
         glowSizeStep = 5
