@@ -170,7 +170,6 @@ class MainActivity : Activity() {
                 val checkTime = if (assetTime > 0) assetTime else releasePublishedAt
                 val installedAt = packageManager.getPackageInfo(packageName, 0).lastUpdateTime
 
-                // إضافة فارق سماح زمني قدره 3 دقائق لمنع التكرار بعد التثبيت
                 val need = checkTime > (installedAt + 180_000L)
                 apkUrl = url
                 runOnUiThread {
