@@ -22,6 +22,7 @@ jobs:
       - name: Build signed APK
         env:
           CHANNEL: ${{ github.ref_name == 'Test' && 'test' || 'latest' }}
+          BUILD_NUMBER: ${{ github.run_number }}
           KEYSTORE_PATH: ${{ runner.temp }}/emadshettos.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -39,6 +40,7 @@ jobs:
         with:
           tag_name: latest
           name: Latest build
+          body: "build=${{ github.run_number }}"
           files: EmadShettos-PoolAim.apk
       - name: Publish test release (Test only)
         if: github.ref_name == 'Test'
@@ -46,6 +48,7 @@ jobs:
         with:
           tag_name: test
           name: Test build
+          body: "build=${{ github.run_number }}"
           prerelease: true
           target_commitish: ${{ github.sha }}
           files: EmadShettos-PoolAim.apk

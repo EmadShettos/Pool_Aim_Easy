@@ -897,13 +897,17 @@ class OverlayService : Service() {
         list.addView(forceBtn)
         list.addView(forcePanel, panelLp())
 
-        list.addView(btn(T("m_line_plus")) { view.thicker(1f) })
-        list.addView(btn(T("m_line_minus")) { view.thicker(-1f) })
+        list.addView(btn(T("m_line_plus")) { view.thicker(0.5f); syncHandles() })
+        list.addView(btn(T("m_line_minus")) { view.thicker(-0.5f); syncHandles() })
         list.addView(btn(T("m_glow")) { togglePanel(glow) })
         list.addView(glow, panelLp())
         list.addView(btn(T("m_theme")) { view.nextTheme() })
         list.addView(btn(T("m_hud")) { view.toggle("hud") })
-        list.addView(btn(T("m_reset")) { view.resetLayout(); view.save() })
+        list.addView(btn(T("m_reset")) {
+            view.resetToDefaults()
+            rebuildControls()
+            syncHandles()
+        })
         list.addView(btn(T("m_stop")) { stopSelf() })
 
         val scrollH = (min(dm.widthPixels, dm.heightPixels) * 0.45f).toInt()
