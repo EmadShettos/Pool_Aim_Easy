@@ -100,9 +100,9 @@ class OverlayView(ctx: Context) : View(ctx) {
         flags["snap"] = false
         flags["glow"] = true
         flags["hud"] = true
-        thickness = 2f
+        thickness = 1.5f
         cueForce = 1
-        glowStep = 4
+        glowStep = 3
         glowSizeStep = 5
         aimHidden = true
         locked = true
