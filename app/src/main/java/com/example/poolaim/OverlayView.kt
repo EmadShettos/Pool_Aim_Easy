@@ -119,6 +119,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         val rw = rect.width().coerceAtLeast(1f)
         val rh = rect.height().coerceAtLeast(1f)
 
+        // حفظ المواضع النسبية للنقاط داخل المستطيل قبل التدوير
         val u1 = (p1.x - rect.left) / rw
         val v1 = (p1.y - rect.top) / rh
         val u2 = (p2.x - rect.left) / rw
@@ -126,12 +127,14 @@ class OverlayView(ctx: Context) : View(ctx) {
         val um = (marker.x - rect.left) / rw
         val vm = (marker.y - rect.top) / rh
 
+        // تدوير أبعاد وموضع المستطيل 180 درجة حول مركز الشاشة
         val nl = w - rect.right
         val nr = w - rect.left
         val nt = h - rect.bottom
         val nb = h - rect.top
         rect.set(nl, nt, nr, nb)
 
+        // تدوير النقاط داخل المستطيل الجديد متناسبة تماماً مع وضعه الجديد دون إرجاعها للمنتصف
         p1.set(rect.left + (1f - u1) * rect.width(), rect.top + (1f - v1) * rect.height())
         p2.set(rect.left + (1f - u2) * rect.width(), rect.top + (1f - v2) * rect.height())
         marker.set(rect.left + (1f - um) * rect.width(), rect.top + (1f - vm) * rect.height())
@@ -195,6 +198,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         }
     }
 
+    // ---------- drawing ----------
     private fun glowAlpha(base: Int) = (base * glowStep / 5f).toInt().coerceIn(0, 255)
 
     private fun glowLine(c: Canvas, ax: Float, ay: Float, bx: Float, by: Float, rgb: Int, outerA: Int, innerA: Int) {

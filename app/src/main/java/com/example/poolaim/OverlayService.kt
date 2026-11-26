@@ -156,19 +156,19 @@ object Lang {
         "m_c8_title" to "خط C-8 (ضربة مرتدة)",
         "m_c8" to "خط C-8",
         "m_line" to "خط",
-        "m_glow" to "Guide line glow",
+        "m_glow" to "هالة الخط",
         "m_transparency" to "الشفافية",
         "m_distance" to "المسافة",
         "m_size" to "الحجم",
-        "m_pockets" to "Pocket lines",
-        "m_hud" to "HUD",
-        "m_snap" to "Snap to pockets",
-        "hud_locked" to "Rect locked",
-        "hud_unlocked" to "Rect unlocked",
-        "hud_cut" to "Cut",
-        "hud_pocket" to "pocket",
-        "hud_banks" to "bank(s)",
-        "hud_pocketed" to "pocketed"
+        "m_pockets" to "خطوط الجيوب",
+        "m_hud" to "الشريط العلوي",
+        "m_snap" to "الالتصاق بالجيوب",
+        "hud_locked" to "المستطيل مقفل",
+        "hud_unlocked" to "المستطيل غير مقفل",
+        "hud_cut" to "الزاوية",
+        "hud_pocket" to "الجيب",
+        "hud_banks" to "ارتداد",
+        "hud_pocketed" to "دخلت الجيب"
     )
 }
 
@@ -318,12 +318,17 @@ class OverlayService : Service() {
     private lateinit var ghostPanelView: LinearLayout
     private lateinit var c8PanelView: LinearLayout
     private lateinit var glowPanelView: LinearLayout
+    private lateinit var forcePanel: LinearLayout
+    private lateinit var forceBtnRef: Button
+    private lateinit var rotateBtnRef: Button
     private lateinit var controlsParams: WindowManager.LayoutParams
     private lateinit var overlayParams: WindowManager.LayoutParams
     private val handles = mutableListOf<Handle>()
     private val d get() = resources.displayMetrics.density
     private fun prefs(): SharedPreferences = getSharedPreferences(Lang.PREFS, MODE_PRIVATE)
     private fun T(k: String) = Lang.t(this, k)
+    private var isPortraitMode = false
+    private val dragScale = 0.6f
 
     private val langListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == Lang.KEY && ::controls.isInitialized && ::view.isInitialized) {
@@ -334,6 +339,31 @@ class OverlayService : Service() {
 
     override fun onBind(i: Intent?): IBinder? = null
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (!::view.isInitialized) return
+        view.postDelayed({
+            if (newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                isPortraitMode = true
+                applyGameRect()
+            } else {
+                isPortraitMode = false
+            }
+            if (::rotateBtnRef.isInitialized) {
+                rotateBtnRef.text = T(if (isPortraitMode) "m_portrait" else "m_rotate")
+            }
+            saveMenu()
+            syncHandles()
+        }, 500)
+    }
+
+    private fun applyGameRect() {
+        if (!::view.isInitialized) return
+        if (view.width <= 0 || view.height <= 0) return
+        if (view.width > view.height) view.applyGameLayout()
+        syncHandles()
+    }
+
     private fun cutoutFull(lp: WindowManager.LayoutParams) {
         if (Build.VERSION.SDK_INT >= 30) {
             lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
@@ -343,7 +373,7 @@ class OverlayService : Service() {
     }
 
     private inner class Handle(val key: String) {
-        val size = (30 * resources.displayMetrics.density).toInt()
+        val size = (36 * resources.displayMetrics.density).toInt()
         val v = View(this@OverlayService)
         val lp = WindowManager.LayoutParams(
             size, size, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -368,11 +398,11 @@ class OverlayService : Service() {
                         true
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        view.setPoint(key, ox + (e.rawX - sx), oy + (e.rawY - sy), false)
+                        view.setPoint(key, ox + (e.rawX - sx) * dragScale, oy + (e.rawY - sy) * dragScale, false)
                         syncHandles(); true
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        view.setPoint(key, ox + (e.rawX - sx), oy + (e.rawY - sy), true)
+                        view.setPoint(key, ox + (e.rawX - sx) * dragScale, oy + (e.rawY - sy) * dragScale, true)
                         view.save(); syncHandles(); true
                     }
                     else -> false
@@ -414,7 +444,7 @@ class OverlayService : Service() {
             val active = if (view.hideAll) false else when (h.key) {
                 "tl", "br" -> !view.locked && !view.rectHidden
                 "marker" -> view.flags["lines"] == true
-                "p1", "p2" -> !view.aimHidden
+                "p1", "p2" -> !view.aimHidden || view.flags["ghost"] == true
                 else -> true
             }
             val p = view.touchPos(h.key)
@@ -479,9 +509,9 @@ class OverlayService : Service() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
         }
-        row.addView(tv(title, if (bold) 12f else 11f, Color.WHITE, bold),
-            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(tv(title, if (bold) 12f else 11f, Color.WHITE, bold))
         val cb = CheckBox(this).apply {
             isChecked = checked
             buttonTintList = ColorStateList.valueOf(Color.WHITE)
@@ -492,11 +522,15 @@ class OverlayService : Service() {
     }
 
     private fun seekRow(title: String, maxV: Int, init: Int, onChange: (Int) -> Unit): LinearLayout {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
         row.addView(tv(title, 11f, Color.WHITE, true))
         val sb = TickSeekBar(this).apply {
             max = maxV
             progress = init
+            rotation = 180f
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, pr: Int, fromUser: Boolean) {
                     if (fromUser) onChange(pr)
@@ -517,12 +551,13 @@ class OverlayService : Service() {
 
     private fun ghostPanel(open: Boolean): LinearLayout {
         val panel = panelBase(open)
-
+        
         val row1 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
-
+        
         val tvGhost = tv(T("m_ghost"), 11f, Color.WHITE, true)
         val cbGhost = CheckBox(this).apply {
             isChecked = view.flags["ghost"] == true
@@ -533,20 +568,8 @@ class OverlayService : Service() {
             }
         }
 
-        val tvSnap = tv(T("m_snap"), 10f, Color.argb(220, 255, 255, 255), false)
-        val cbSnap = CheckBox(this).apply {
-            isChecked = view.flags["snap"] == true
-            buttonTintList = ColorStateList.valueOf(Color.WHITE)
-            setOnCheckedChangeListener { _, on ->
-                if ((view.flags["snap"] == true) != on) view.toggle("snap")
-            }
-        }
-
         row1.addView(tvGhost)
         row1.addView(cbGhost)
-        row1.addView(View(this), LinearLayout.LayoutParams((10 * d).toInt(), 1))
-        row1.addView(tvSnap)
-        row1.addView(cbSnap)
         panel.addView(row1)
 
         panel.addView(seekRow(T("m_distance"), 10, view.ghostDistStep) { v ->
@@ -560,24 +583,56 @@ class OverlayService : Service() {
 
     private fun c8Panel(open: Boolean): LinearLayout {
         val panel = panelBase(open)
+        
+        val rowTop = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
 
-        panel.addView(checkRow(T("m_c8"), !view.aimHidden, true) { on ->
-            view.aimHidden = !on
-            view.save(); view.invalidate(); syncHandles()
-        })
+        val tvC8 = tv(T("m_c8"), 11f, Color.WHITE, true)
+        val cbC8 = CheckBox(this).apply {
+            isChecked = !view.aimHidden
+            buttonTintList = ColorStateList.valueOf(Color.WHITE)
+            setOnCheckedChangeListener { _, on ->
+                view.aimHidden = !on
+                view.save(); view.invalidate(); syncHandles()
+            }
+        }
+
+        val tvSnap = tv(T("m_snap"), 10f, Color.argb(220, 255, 255, 255), false)
+        val cbSnap = CheckBox(this).apply {
+            isChecked = view.flags["snap"] == true
+            buttonTintList = ColorStateList.valueOf(Color.WHITE)
+            setOnCheckedChangeListener { _, on ->
+                view.flags["snap"] = on
+                view.save(); view.invalidate()
+            }
+        }
+
+        rowTop.addView(tvC8)
+        rowTop.addView(cbC8)
+        rowTop.addView(View(this), LinearLayout.LayoutParams((12 * d).toInt(), 1))
+        rowTop.addView(tvSnap)
+        rowTop.addView(cbSnap)
+        panel.addView(rowTop)
 
         val rowLines = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(0, (4 * d).toInt(), 0, 0)
         }
         rowLines.addView(tv(T("m_line"), 11f, Color.WHITE, true),
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f))
 
-        fun addMiniCheck(num: String, key: String) {
+        val checkBoxes = mutableMapOf<String, CheckBox>()
+
+        fun addExclusiveCheck(num: String, key: String) {
             val h = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                layoutDirection = View.LAYOUT_DIRECTION_RTL
                 setPadding((2 * d).toInt(), 0, (2 * d).toInt(), 0)
             }
             h.addView(tv(num, 11f, Color.rgb(0, 229, 255), true))
@@ -585,17 +640,35 @@ class OverlayService : Service() {
                 isChecked = view.flags[key] == true
                 buttonTintList = ColorStateList.valueOf(Color.WHITE)
                 setOnCheckedChangeListener { _, on ->
-                    if ((view.flags[key] == true) != on) view.toggle(key)
+                    if (on) {
+                        for ((otherK, otherCb) in checkBoxes) {
+                            if (otherK != key && otherCb.isChecked) {
+                                otherCb.isChecked = false
+                                view.flags[otherK] = false
+                            }
+                        }
+                        view.flags[key] = true
+                    } else {
+                        if (checkBoxes.values.none { it.isChecked }) {
+                            isChecked = true
+                            view.flags[key] = true
+                        } else {
+                            view.flags[key] = false
+                        }
+                    }
+                    view.save()
+                    view.invalidate()
                     syncHandles()
                 }
             }
+            checkBoxes[key] = cb
             h.addView(cb)
             rowLines.addView(h, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
 
-        addMiniCheck("1", "single")
-        addMiniCheck("2", "bank")
-        addMiniCheck("4", "double_bank")
+        addExclusiveCheck("1", "single")
+        addExclusiveCheck("2", "bank")
+        addExclusiveCheck("4", "double_bank")
         panel.addView(rowLines)
 
         return panel
@@ -662,6 +735,14 @@ class OverlayService : Service() {
         c8PanelView = c8Panel(sp.getBoolean("c8_open", false))
         glowPanelView = glowPanel(sp.getBoolean("glow_open", false))
 
+        forcePanel = panelBase(false).apply {
+            addView(seekRow(T("m_force"), 10, view.cueForce) { v ->
+                view.cueForce = v.coerceIn(1, 10)
+                forceBtnRef.text = "${T("m_force")}: ${view.cueForce}"
+                view.invalidate()
+            })
+        }
+
         val ballBtn = BallView(this).apply {
             var sx = 0f; var sy = 0f; var ox = 0; var oy = 0; var moved = false
             setOnTouchListener { _, e ->
@@ -698,6 +779,12 @@ class OverlayService : Service() {
             rebuildControls()
         }, lp())
 
+        rotateBtnRef = btn(T(if (isPortraitMode) "m_portrait" else "m_rotate")) {
+            view.rotateTable()
+            syncHandles()
+        }
+        list.addView(rotateBtnRef, lp())
+
         list.addView(btn(T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")) {
             view.rectHidden = !view.rectHidden
             view.save(); view.invalidate(); syncHandles()
@@ -720,6 +807,12 @@ class OverlayService : Service() {
 
         list.addView(btn(T("m_ghost")) { togglePanel(ghostPanelView) }, lp())
         list.addView(ghostPanelView, lp())
+
+        forceBtnRef = btn("${T("m_force")}: ${view.cueForce}") {
+            togglePanel(forcePanel)
+        }
+        list.addView(forceBtnRef, lp())
+        list.addView(forcePanel, lp())
 
         list.addView(btn(T("m_line_plus")) { view.thicker(0.5f); syncHandles() }, lp())
         list.addView(btn(T("m_line_minus")) { view.thicker(-0.5f); syncHandles() }, lp())
