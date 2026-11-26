@@ -47,21 +47,33 @@ class InstallResultReceiver : BroadcastReceiver() {
                 @Suppress("DEPRECATION")
                 val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
                 if (confirm != null) {
-                    confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    ctx.startActivity(confirm)
+                    val act = MainActivity.instance
+                    try {
+                        if (act != null && !act.isFinishing) {
+                            act.startActivity(confirm)
+                        } else {
+                            confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            ctx.startActivity(confirm)
+                        }
+                    } catch (e: Exception) {
+                        val msg = e.message ?: ""
+                        MainActivity.instance?.runOnUiThread {
+                            MainActivity.instance?.onInstallError(PackageInstaller.STATUS_FAILURE, msg)
+                        }
+                    }
                 }
             }
             PackageInstaller.STATUS_SUCCESS -> {
                 val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
                 if (launch != null) {
                     launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                    ctx.startActivity(launch)
+                    runCatching { ctx.startActivity(launch) }
                 }
             }
             else -> {
                 val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
                 MainActivity.instance?.runOnUiThread {
-                    MainActivity.instance?.onInstallError(msg)
+                    MainActivity.instance?.onInstallError(status, msg)
                 }
             }
         }
@@ -141,44 +153,70 @@ class MainActivity : Activity() {
         var instance: MainActivity? = null
     }
 
-    fun onInstallError(msg: String) {
+    fun onInstallError(status: Int, msg: String) {
         isInstalling = false
+        if (status == PackageInstaller.STATUS_FAILURE_ABORTED) {
+            markFailed(
+                if (ar()) "تم إلغاء التثبيت. اضغط إعادة المحاولة أو نزّل التحديث يدوياً"
+                else "Install cancelled. Tap Retry or download the update manually"
+            )
+            return
+        }
         val f = File(cacheDir, "update.apk")
-        if (f.exists()) {
+        if (!fallbackTried && f.exists()) {
+            fallbackTried = true
             setStatus(if (ar()) "جارٍ فتح التثبيت..." else "Opening installer...")
             installFallback(f)
         } else {
-            setStatus(if (ar()) "فشل التثبيت: $msg" else "Install failed: $msg")
+            markFailed(if (ar()) "فشل التثبيت: $msg" else "Install failed: $msg")
+        }
+    }
+
+    private fun markFailed(msg: String) {
+        isDownloading = false
+        isInstalling = false
+        updateFailed = true
+        statusText = msg
+        runOnUiThread {
+            if (!isFinishing) build(scroll?.scrollY ?: 0)
+        }
+    }
+
+    private fun openReleasePage() {
+        try {
+            startActivity(
+                Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("https://github.com/EmadShettos/Pool_Aim_Easy/releases/tag/${BuildConfig.UPDATE_TAG}")
+                )
+            )
+        } catch (e: Exception) {
+            Toast.makeText(this, if (ar()) "تعذر فتح المتصفح" else "Could not open the browser", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun installFallback(file: File) {
-        try {
-            val uri = Uri.parse("content://$packageName.apkprovider/update.apk")
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            val systemInstaller = listOf("com.google.android.packageinstaller", "com.android.packageinstaller")
-                .firstOrNull { pkg ->
-                    runCatching { packageManager.getPackageInfo(pkg, 0) }.isSuccess
-                }
-            if (systemInstaller != null) {
-                intent.setPackage(systemInstaller)
-            }
-            startActivity(intent)
-        } catch (e: Exception) {
+        if (!file.exists()) {
+            markFailed(if (ar()) "ملف التحديث غير موجود" else "Update file is missing")
+            return
+        }
+        val uri = Uri.parse("content://$packageName.apkprovider/update.apk")
+        fun viewIntent(pkg: String?): Intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            if (pkg != null) setPackage(pkg)
+        }
+        val installers = listOf("com.google.android.packageinstaller", "com.android.packageinstaller")
+            .filter { pkg -> runCatching { packageManager.getPackageInfo(pkg, 0) }.isSuccess }
+        val candidates = installers.map { viewIntent(it) } + viewIntent(null)
+        for (intent in candidates) {
             try {
-                val uri = Uri.parse("content://$packageName.apkprovider/update.apk")
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
                 startActivity(intent)
-            } catch (ex: Exception) {
-                setStatus(if (ar()) "تعذر فتح التثبيت: ${ex.message}" else "Could not open installer: ${ex.message}")
+                return
+            } catch (e: Exception) {
             }
         }
+        markFailed(if (ar()) "تعذر فتح شاشة التثبيت" else "Could not open the installer screen")
     }
 
     private val gold = 0xFFFFD21F.toInt()
@@ -192,6 +230,9 @@ class MainActivity : Activity() {
     private var pendingStart = false
     private var pendingUpdate = false
     private var autoTried = false
+    private var updateFailed = false
+    private var fallbackTried = false
+    private var installStartedAt = 0L
     private var apkUrl: String? = null
     private var statusText: String = ""
     private var statusView: TextView? = null
@@ -223,27 +264,36 @@ class MainActivity : Activity() {
                     requestMethod = "GET"
                     setRequestProperty("User-Agent", "PoolAimApp")
                     setRequestProperty("Accept", "application/vnd.github+json")
-                    connectTimeout = 6000
-                    readTimeout = 6000
+                    setRequestProperty("Cache-Control", "no-cache")
+                    connectTimeout = 8000
+                    readTimeout = 8000
                 }
                 if (conn.responseCode != 200) return@thread
                 val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                val assets = JSONObject(resp).getJSONArray("assets")
+                val json = JSONObject(resp)
+                val assets = json.getJSONArray("assets")
                 var url: String? = null
                 var assetTime = 0L
                 for (i in 0 until assets.length()) {
                     val a = assets.getJSONObject(i)
                     if (a.getString("name").endsWith(".apk")) {
                         url = a.optString("browser_download_url", FALLBACK_APK)
-                        assetTime = parseTime(a.getString("updated_at"))
+                        assetTime = runCatching { parseTime(a.getString("updated_at")) }.getOrDefault(0L)
                         break
                     }
                 }
-                if (url == null || assetTime == 0L) return@thread
-                val installedAt = packageManager.getPackageInfo(packageName, 0).lastUpdateTime
-                val need = assetTime > (installedAt + 300_000L)
+                if (url == null) return@thread
+                val remoteBuild = Regex("build=(\\d+)").find(json.optString("body", ""))
+                    ?.groupValues?.get(1)?.toIntOrNull()
+                val need = if (remoteBuild != null) {
+                    remoteBuild > BuildConfig.BUILD_NUMBER
+                } else {
+                    val installedAt = packageManager.getPackageInfo(packageName, 0).lastUpdateTime
+                    assetTime > 0L && assetTime > (installedAt + 300_000L)
+                }
                 apkUrl = url
                 runOnUiThread {
+                    if (!need) updateFailed = false
                     if (need != isUpdateRequired) {
                         isUpdateRequired = need
                         if (need) statusText = if (ar()) "تم العثور على تحديث، جارٍ التجهيز..." else "Update found, preparing..."
@@ -259,7 +309,11 @@ class MainActivity : Activity() {
     }
 
     private fun startUpdateFlow() {
-        if (isDownloading || isInstalling) return
+        if (isDownloading) return
+        if (isInstalling) {
+            if (System.currentTimeMillis() - installStartedAt < 90_000L) return
+            isInstalling = false
+        }
         if (!packageManager.canRequestPackageInstalls()) {
             pendingUpdate = true
             Toast.makeText(
@@ -270,86 +324,129 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
             return
         }
+        pendingUpdate = false
+        fallbackTried = false
+        if (updateFailed) {
+            updateFailed = false
+            build(scroll?.scrollY ?: 0)
+        }
         isDownloading = true
         setStatus(if (ar()) "جارٍ تنزيل التحديث... 0%" else "Downloading update... 0%")
-        val link = apkUrl ?: FALLBACK_APK
+        val links = listOfNotNull(apkUrl, FALLBACK_APK).distinct()
         thread {
-            try {
-                val out = File(cacheDir, "update.apk")
-                val tmp = File(cacheDir, "update.apk.part")
-                if (tmp.exists()) tmp.delete()
-                val conn = (URL(link).openConnection() as HttpURLConnection).apply {
-                    instanceFollowRedirects = true
-                    setRequestProperty("User-Agent", "PoolAimApp")
-                    connectTimeout = 15000
-                    readTimeout = 30000
-                }
-                if (conn.responseCode != 200) throw Exception("HTTP ${conn.responseCode}")
-                val total = conn.contentLengthLong
-                var done = 0L
-                var lastPct = -1
-                conn.inputStream.use { input ->
-                    tmp.outputStream().use { os ->
-                        val buf = ByteArray(64 * 1024)
-                        while (true) {
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            os.write(buf, 0, n)
-                            done += n
-                            if (total > 0) {
-                                val pct = (done * 100 / total).toInt()
-                                if (pct != lastPct) {
-                                    lastPct = pct
-                                    setStatus(if (ar()) "جارٍ تنزيل التحديث... $pct%" else "Downloading update... $pct%")
-                                }
-                            }
-                        }
+            val out = File(cacheDir, "update.apk")
+            val tmp = File(cacheDir, "update.apk.part")
+            var ok = false
+            var lastError = ""
+            loop@ for (link in links) {
+                for (attempt in 1..2) {
+                    try {
+                        if (tmp.exists()) tmp.delete()
+                        download(link, tmp)
+                        ok = true
+                        break@loop
+                    } catch (e: Exception) {
+                        lastError = e.message ?: "error"
+                        Thread.sleep(1500)
                     }
                 }
-                if (tmp.length() < 100_000L) throw Exception("file too small")
-                if (out.exists()) out.delete()
-                tmp.renameTo(out)
-                runOnUiThread {
-                    isDownloading = false
-                    installApk(out)
-                }
-            } catch (e: Exception) {
-                isDownloading = false
-                setStatus(
-                    if (ar()) "فشل التنزيل، اضغط الزر للمحاولة مرة أخرى"
-                    else "Download failed, tap the button to retry"
+            }
+            if (!ok) {
+                markFailed(
+                    if (ar()) "فشل التنزيل ($lastError). اضغط إعادة المحاولة أو نزّل يدوياً"
+                    else "Download failed ($lastError). Tap Retry or download manually"
                 )
+                return@thread
+            }
+            if (out.exists()) out.delete()
+            if (!tmp.renameTo(out)) {
+                markFailed(if (ar()) "تعذر حفظ ملف التحديث" else "Could not save the update file")
+                return@thread
+            }
+            runOnUiThread {
+                isDownloading = false
+                installApk(out)
             }
         }
     }
 
-    private fun installApk(file: File) {
+    private fun download(link: String, tmp: File) {
+        val conn = (URL(link).openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "PoolAimApp")
+            connectTimeout = 15000
+            readTimeout = 30000
+        }
         try {
-            isInstalling = true
-            setStatus(if (ar()) "جارٍ التثبيت..." else "Installing...")
-            val pi = packageManager.packageInstaller
-            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-            params.setAppPackageName(packageName)
-            if (Build.VERSION.SDK_INT >= 31) {
-                params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-            }
-            val id = pi.createSession(params)
-            val session = pi.openSession(id)
-            file.inputStream().use { ins ->
-                session.openWrite("update.apk", 0, file.length()).use { os ->
-                    ins.copyTo(os)
-                    session.fsync(os)
+            if (conn.responseCode != 200) throw Exception("HTTP ${conn.responseCode}")
+            val total = conn.contentLengthLong
+            var done = 0L
+            var lastPct = -1
+            conn.inputStream.use { input ->
+                tmp.outputStream().use { os ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        os.write(buf, 0, n)
+                        done += n
+                        if (total > 0) {
+                            val pct = (done * 100 / total).toInt()
+                            if (pct != lastPct) {
+                                lastPct = pct
+                                setStatus(if (ar()) "جارٍ تنزيل التحديث... $pct%" else "Downloading update... $pct%")
+                            }
+                        }
+                    }
                 }
             }
-            val intent = Intent(this, InstallResultReceiver::class.java).setAction(ACTION_INSTALL_RESULT)
-            val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
-            val pending = PendingIntent.getBroadcast(this, id, intent, flags)
-            session.commit(pending.intentSender)
-            session.close()
-        } catch (e: Exception) {
-            isInstalling = false
-            installFallback(file)
+            if (total > 0 && tmp.length() != total) throw Exception("incomplete")
+            if (tmp.length() < 100_000L) throw Exception("file too small")
+            tmp.inputStream().use { ins ->
+                val head = ByteArray(2)
+                if (ins.read(head) != 2 || head[0] != 'P'.code.toByte() || head[1] != 'K'.code.toByte()) {
+                    throw Exception("not an APK")
+                }
+            }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun installApk(file: File) {
+        isInstalling = true
+        installStartedAt = System.currentTimeMillis()
+        setStatus(if (ar()) "جارٍ التثبيت..." else "Installing...")
+        thread {
+            try {
+                val pi = packageManager.packageInstaller
+                for (old in pi.mySessions) runCatching { pi.abandonSession(old.sessionId) }
+                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+                params.setAppPackageName(packageName)
+                if (Build.VERSION.SDK_INT >= 31) {
+                    params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                }
+                val id = pi.createSession(params)
+                val session = pi.openSession(id)
+                file.inputStream().use { ins ->
+                    session.openWrite("update.apk", 0, file.length()).use { os ->
+                        ins.copyTo(os)
+                        session.fsync(os)
+                    }
+                }
+                val intent = Intent(this, InstallResultReceiver::class.java).setAction(ACTION_INSTALL_RESULT)
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                    (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+                val pending = PendingIntent.getBroadcast(this, id, intent, flags)
+                session.commit(pending.intentSender)
+                session.close()
+            } catch (e: Exception) {
+                runOnUiThread {
+                    isInstalling = false
+                    fallbackTried = true
+                    installFallback(file)
+                }
+            }
         }
     }
 
@@ -584,6 +681,18 @@ class MainActivity : Activity() {
                 topMargin = dp(10)
             })
 
+            if (updateFailed) {
+                updateBox.addView(
+                    styled(
+                        if (isAr) "تنزيل يدوي من صفحة الإصدارات" else "Download manually (Releases)",
+                        0xFF0B0B0B.toInt(), gold
+                    ) { openReleasePage() },
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = dp(8) }
+                )
+            }
+
             root.addView(updateBox, lp())
         }
 
@@ -684,6 +793,19 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (pendingStart) {
+            pendingStart = false
+            if (!isUpdateRequired && Settings.canDrawOverlays(this)) {
+                launchOverlay()
+            }
+        }
+        if (pendingUpdate && packageManager.canRequestPackageInstalls()) {
+            pendingUpdate = false
+            startUpdateFlow()
+        }
+        if (isInstalling && System.currentTimeMillis() - installStartedAt > 90_000L) {
+            isInstalling = false
+        }
         checkForUpdates()
         videoSlider?.resume()
     }
