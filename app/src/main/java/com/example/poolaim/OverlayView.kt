@@ -24,6 +24,10 @@ class OverlayView(ctx: Context) : View(ctx) {
     var thickness = 2f
     var themeIdx = 0
     var cueForce = 1
+    // وضع القوة: false = عادي (السلوك الافتراضي الحالي) | true = احترافي
+    var forcePro = false
+    var proCue = 10
+    var proPower = 100
     var locked = true
     var rectHidden = false
     var aimHidden = true
@@ -102,6 +106,9 @@ class OverlayView(ctx: Context) : View(ctx) {
         flags["hud"] = true
         thickness = 1.5f
         cueForce = 1
+        forcePro = false
+        proCue = 10
+        proPower = 100
         glowStep = 3
         glowSizeStep = 5
         aimHidden = true
@@ -269,12 +276,21 @@ class OverlayView(ctx: Context) : View(ctx) {
             var maxBanks = if (isDouble) 4 else if (isBank) 2 else 1
             val bw = max(2f * d, th + d)
 
-            glowLine(c, p1.x, p1.y, p2.x, p2.y, Color.WHITE, 60, 110)
-            line(c, p1.x, p1.y, p2.x, p2.y, th, Color.BLACK)
+            var stopPt: Pt? = null
+            var m: List<Pair<Pt, Pt>>
+            if (forcePro) {
+                val pp = Geometry.proPath(pt(p1), pt(p2), b, maxBanks, proCue, proPower)
+                glowLine(c, p1.x, p1.y, pp.aimEnd.first, pp.aimEnd.second, Color.WHITE, 60, 110)
+                line(c, p1.x, p1.y, pp.aimEnd.first, pp.aimEnd.second, th, Color.BLACK)
+                m = pp.segs
+                stopPt = pp.stopPt
+            } else {
+                glowLine(c, p1.x, p1.y, p2.x, p2.y, Color.WHITE, 60, 110)
+                line(c, p1.x, p1.y, p2.x, p2.y, th, Color.BLACK)
+                m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks, 1)
+            }
 
-            var m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks, cueForce)
-
-            if (flags["snap"] == true && m.isNotEmpty()) {
+            if (flags["snap"] == true && m.isNotEmpty() && stopPt == null) {
                 val last = m.last().second
                 val (pc, distP) = Geometry.nearestPocket(last, b)
                 if (distP <= snapThresh) {
@@ -294,6 +310,16 @@ class OverlayView(ctx: Context) : View(ctx) {
                     paint.style = Paint.Style.FILL; paint.color = Color.argb(200, 0, 0, 0)
                     c.drawCircle(s.second.first, s.second.second, 3.5f * d, paint)
                 }
+            }
+            // نقطة توقف الكرة البيضاء في الوضع الاحترافي
+            stopPt?.let { sp ->
+                paint.style = Paint.Style.FILL; paint.color = Color.argb(70, 255, 255, 255)
+                c.drawCircle(sp.first, sp.second, ballR, paint)
+                ring(c, sp.first, sp.second, ballR, Color.WHITE, 1.6f * d)
+                paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.4f * d; paint.color = Color.BLACK
+                val k = ballR * 0.45f
+                c.drawLine(sp.first - k, sp.second - k, sp.first + k, sp.second + k, paint)
+                c.drawLine(sp.first - k, sp.second + k, sp.first + k, sp.second - k, paint)
             }
         }
 
@@ -377,7 +403,10 @@ class OverlayView(ctx: Context) : View(ctx) {
         }
         if (segs.isNotEmpty()) {
             parts.add("${max(0, segs.size - 1)} ${Lang.t(context, "hud_banks")}")
-            parts.add("${if (ar) "قوة" else "P"}: $cueForce")
+            parts.add(
+                if (forcePro) (if (ar) "عصا $proCue • سحب $proPower%" else "Cue $proCue • $proPower%")
+                else (if (ar) "قوة: عادي" else "Force: Normal")
+            )
             if (snapped) parts.add(Lang.t(context, "hud_pocketed"))
         }
         val s = parts.joinToString("  |  ")
@@ -398,6 +427,7 @@ class OverlayView(ctx: Context) : View(ctx) {
             putFloat("mx", marker.x); putFloat("my", marker.y)
             putFloat("thick", thickness); putInt("theme", themeIdx)
             putInt("cue_force", cueForce)
+            putBoolean("force_pro", forcePro); putInt("pro_cue", proCue); putInt("pro_power", proPower)
             putInt("gdist", ghostDistStep); putInt("gsize", ghostSizeStep)
             putInt("glow_step", glowStep); putInt("glow_size", glowSizeStep)
             putBoolean("locked", locked); putBoolean("rect_hidden", rectHidden)
@@ -419,6 +449,9 @@ class OverlayView(ctx: Context) : View(ctx) {
         thickness = prefs.getFloat("thick", 2f).coerceIn(1f, 10f)
         themeIdx = prefs.getInt("theme", 0).coerceIn(0, THEMES.size - 1)
         cueForce = prefs.getInt("cue_force", 1).coerceIn(1, 10)
+        forcePro = prefs.getBoolean("force_pro", false)
+        proCue = prefs.getInt("pro_cue", 10).coerceIn(1, 10)
+        proPower = prefs.getInt("pro_power", 100).let { if (it in listOf(25, 50, 75, 100)) it else 100 }
         for (k in flags.keys.toList()) flags[k] = prefs.getBoolean("f_$k", flags[k]!!)
         if (!prefs.contains("l")) return
         val l = prefs.getFloat("l", 0f); val t = prefs.getFloat("t", 0f)

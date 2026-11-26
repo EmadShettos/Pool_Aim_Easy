@@ -28,6 +28,8 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -89,7 +91,11 @@ object Lang {
         "m_unlock" to "Unlock rectangle",
         "m_reset" to "Reset",
         "m_theme" to "Theme",
-        "m_force" to "Force",
+        "m_force" to "Force (cue & power)",
+        "m_f_normal" to "Normal",
+        "m_f_pro" to "Pro",
+        "m_f_cue" to "Cue force",
+        "m_f_power" to "Power",
         "m_line_plus" to "Line +",
         "m_line_minus" to "Line -",
         "m_ghost" to "Ghost ball",
@@ -149,7 +155,11 @@ object Lang {
         "m_unlock" to "فتح المستطيل",
         "m_reset" to "إعادة ضبط",
         "m_theme" to "المظهر",
-        "m_force" to "قوة الضربة",
+        "m_force" to "القوة (العصا & السحب)",
+        "m_f_normal" to "عادي",
+        "m_f_pro" to "احترافي",
+        "m_f_cue" to "قوة العصا",
+        "m_f_power" to "قوة السحب",
         "m_line_plus" to "سماكة +",
         "m_line_minus" to "سماكة -",
         "m_ghost" to "الكرة الشبحية",
@@ -722,8 +732,6 @@ class OverlayService : Service() {
         val savedScroll = sp.getInt("menu_scroll", 0)
         isPortraitMode = sp.getBoolean("is_portrait", false)
 
-        var currentForce = sp.getInt("cue_force", 1).coerceIn(1, 10)
-        runCatching { view.cueForce = currentForce }
 
         controls = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -835,60 +843,120 @@ class OverlayService : Service() {
         list.addView(btn(T("m_ghost")) { togglePanel(ghost) })
         list.addView(ghost, panelLp())
 
-        fun forceText(f: Int) = "${T("m_force")}: $f"
-        val forceBtn = btn(forceText(currentForce)) { }
-        forceBtnRef = forceBtn
-
-        val forceBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding((4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt())
-            background = darkBox()
+        val rawForce = T("m_force")
+        val styledForce = SpannableString(rawForce).apply {
+            val o = rawForce.indexOf('(')
+            if (o >= 0) setSpan(RelativeSizeSpan(0.82f), o, rawForce.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
+        val forceBtn = btn(styledForce) { }
+        forceBtnRef = forceBtn
+        val forceBox = panelBase(false)
         forcePanel = forceBox
 
-        val row1 = LinearLayout(this).apply {
+        // ---- صف الاختيار: عادي / احترافي (اختيار واحد فقط) ----
+        val modeRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutDirection = if (Lang.isAr(this@OverlayService)) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
         }
-        val row2 = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        val rbNormal = RadioButton(this).apply {
+            text = T("m_f_normal"); textSize = 11f; setTextColor(Color.WHITE)
+            buttonTintList = ColorStateList.valueOf(Color.WHITE); id = View.generateViewId()
+        }
+        val rbPro = RadioButton(this).apply {
+            text = T("m_f_pro"); textSize = 11f; setTextColor(Color.WHITE)
+            buttonTintList = ColorStateList.valueOf(Color.WHITE); id = View.generateViewId()
+        }
+        val modeGroup = RadioGroup(this).apply {
+            orientation = RadioGroup.HORIZONTAL
+            layoutDirection = modeRow.layoutDirection
+            addView(rbNormal, RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(rbPro, RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        modeRow.addView(modeGroup, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        forceBox.addView(modeRow)
+
+        // ---- لوحة الاحترافي ----
+        val proBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, (4 * d).toInt(), 0, 0)
         }
 
-        val orderedForces = listOf(
-            listOf(5, 4, 3, 2, 1),
-            listOf(10, 9, 8, 7, 6)
-        )
-
-        for ((idx, rowList) in orderedForces.withIndex()) {
-            val targetRow = if (idx == 0) row1 else row2
-            for (p in rowList) {
-                val numBtn = Button(this).apply {
-                    text = "$p"
-                    textSize = 10f
-                    typeface = Typeface.DEFAULT_BOLD
-                    minWidth = 0; minHeight = 0
-                    minimumHeight = (28f * d).toInt()
-                    minimumWidth = (36f * d).toInt()
-                    setPadding(0, 0, 0, 0)
-                    setOnClickListener {
-                        currentForce = p
-                        sp.edit().putInt("cue_force", currentForce).apply()
-                        forceBtnRef.text = forceText(currentForce)
-                        forcePanel.visibility = View.GONE
-                        runCatching { view.cueForce = currentForce; view.save(); view.invalidate() }
-                    }
-                }
-                targetRow.addView(numBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    setMargins((2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt())
-                })
+        fun pickerRow(title: String, values: List<Int>, label: (Int) -> String, init: Int, cols: Int, onPick: (Int) -> Unit): LinearLayout {
+            val wrap = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutDirection = modeRow.layoutDirection
+                setPadding(0, (3 * d).toInt(), 0, (3 * d).toInt())
             }
+            row.addView(tv(title, 11f, Color.WHITE, true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            val valueTv = tv(label(init), 12f, Color.rgb(0, 229, 255), true).apply {
+                setPadding((6 * d).toInt(), 0, (6 * d).toInt(), 0)
+            }
+            val arrow = tv("\u25BC", 12f, Color.WHITE, true).apply {
+                setPadding((8 * d).toInt(), (4 * d).toInt(), (8 * d).toInt(), (4 * d).toInt())
+                background = GradientDrawable().apply {
+                    setColor(Color.argb(60, 255, 255, 255)); cornerRadius = 6f * d
+                }
+            }
+            row.addView(valueTv)
+            row.addView(arrow)
+            val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+            for (chunk in values.chunked(cols)) {
+                val gr = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutDirection = modeRow.layoutDirection
+                }
+                for (v in chunk) {
+                    val b = Button(this).apply {
+                        text = label(v); textSize = 10f; isAllCaps = false
+                        typeface = Typeface.DEFAULT_BOLD
+                        minWidth = 0; minHeight = 0
+                        minimumHeight = (28f * d).toInt(); minimumWidth = 0
+                        setPadding(0, 0, 0, 0)
+                        setOnClickListener {
+                            valueTv.text = label(v)
+                            grid.visibility = View.GONE
+                            arrow.text = "\u25BC"
+                            onPick(v)
+                        }
+                    }
+                    gr.addView(b, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        setMargins((2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt())
+                    })
+                }
+                grid.addView(gr)
+            }
+            val toggle = View.OnClickListener {
+                val open = grid.visibility == View.GONE
+                grid.visibility = if (open) View.VISIBLE else View.GONE
+                arrow.text = if (open) "\u25B2" else "\u25BC"
+            }
+            arrow.setOnClickListener(toggle)
+            row.setOnClickListener(toggle)
+            wrap.addView(row)
+            wrap.addView(grid)
+            return wrap
         }
 
-        forceBox.addView(row1)
-        forceBox.addView(row2)
+        proBox.addView(pickerRow(T("m_f_cue"), (1..10).toList(), { "$it" }, view.proCue, 5) { v ->
+            view.proCue = v; view.save(); view.invalidate()
+        })
+        proBox.addView(pickerRow(T("m_f_power"), listOf(25, 50, 75, 100), { "$it%" }, view.proPower, 4) { v ->
+            view.proPower = v; view.save(); view.invalidate()
+        })
+        forceBox.addView(proBox)
+
+        rbNormal.isChecked = !view.forcePro
+        rbPro.isChecked = view.forcePro
+        proBox.visibility = if (view.forcePro) View.VISIBLE else View.GONE
+        modeGroup.setOnCheckedChangeListener { _, checkedId ->
+            val pro = checkedId == rbPro.id
+            view.forcePro = pro
+            proBox.visibility = if (pro) View.VISIBLE else View.GONE
+            view.save(); view.invalidate()
+        }
 
         forceBtn.setOnClickListener {
             forcePanel.visibility = if (forcePanel.visibility == View.GONE) View.VISIBLE else View.GONE
