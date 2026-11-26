@@ -666,9 +666,9 @@ class OverlayService : Service() {
             rowLines.addView(h, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
 
-        addExclusiveCheck("1", "single")
-        addExclusiveCheck("2", "bank")
         addExclusiveCheck("4", "double_bank")
+        addExclusiveCheck("2", "bank")
+        addExclusiveCheck("1", "single")
         panel.addView(rowLines)
 
         return panel
@@ -697,6 +697,7 @@ class OverlayService : Service() {
             .putBoolean("c8_open", c8PanelView.visibility == View.VISIBLE)
             .putBoolean("glow_open", glowPanelView.visibility == View.VISIBLE)
             .putInt("menu_scroll", menuScroll.scrollY)
+            .putBoolean("is_portrait", isPortraitMode)
             .apply()
     }
 
@@ -719,157 +720,212 @@ class OverlayService : Service() {
         val startY = sp.getInt("menu_y", 120).coerceIn(0, (dm.heightPixels - bs).coerceAtLeast(0))
         val menuOpen = sp.getBoolean("menu_open", false)
         val savedScroll = sp.getInt("menu_scroll", 0)
+        isPortraitMode = sp.getBoolean("is_portrait", false)
 
-        controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        var currentForce = sp.getInt("cue_force", 1).coerceIn(1, 10)
+        runCatching { view.cueForce = currentForce }
+
+        controls = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.START
+        }
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, (6 * d).toInt(), 0, (6 * d).toInt())
-            background = darkBox()
+            gravity = Gravity.START
         }
-
-        fun lp() = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = (3 * d).toInt() }
-
-        ghostPanelView = ghostPanel(sp.getBoolean("ghost_open", false))
-        c8PanelView = c8Panel(sp.getBoolean("c8_open", false))
-        glowPanelView = glowPanel(sp.getBoolean("glow_open", false))
-
-        forcePanel = panelBase(false).apply {
-            addView(seekRow(T("m_force"), 10, view.cueForce) { v ->
-                view.cueForce = v.coerceIn(1, 10)
-                forceBtnRef.text = "${T("m_force")}: ${view.cueForce}"
-                view.invalidate()
-            })
+        val scroll = ScrollView(this).apply {
+            addView(list)
+            visibility = if (menuOpen) View.VISIBLE else View.GONE
+            setOnScrollChangeListener { _, _, y, _, _ ->
+                prefs().edit().putInt("menu_scroll", y).apply()
+            }
         }
+        menuScroll = scroll
+        val ghost = ghostPanel(sp.getBoolean("ghost_open", false))
+        val c8 = c8Panel(sp.getBoolean("c8_open", false))
+        val glow = glowPanel(sp.getBoolean("glow_open", false))
+        ghostPanelView = ghost
+        c8PanelView = c8
+        glowPanelView = glow
 
-        val ballBtn = BallView(this).apply {
-            var sx = 0f; var sy = 0f; var ox = 0; var oy = 0; var moved = false
-            setOnTouchListener { _, e ->
-                when (e.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        sx = e.rawX; sy = e.rawY; ox = controlsParams.x; oy = controlsParams.y; moved = false
-                        true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        val dx = e.rawX - sx; val dy = e.rawY - sy
-                        if (hypot(dx, dy) > ViewConfiguration.get(this@OverlayService).scaledTouchSlop) moved = true
-                        if (moved) {
-                            controlsParams.x = (ox + dx).toInt().coerceIn(0, dm.widthPixels - bs)
-                            controlsParams.y = (oy + dy).toInt().coerceIn(0, dm.heightPixels - bs)
-                            wm.updateViewLayout(controls, controlsParams)
-                        }
-                        true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        if (!moved) {
-                            menuScroll.visibility = if (menuScroll.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-                        }
-                        saveMenu()
-                        true
-                    }
-                    else -> false
+        controlsParams = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.TOP or Gravity.START; x = startX; y = startY }
+
+        val ball = BallView(this)
+        val slop = ViewConfiguration.get(this).scaledTouchSlop
+        var downX = 0f; var downY = 0f; var sx0 = 0; var sy0 = 0; var moved = false
+        ball.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = e.rawX; downY = e.rawY
+                    sx0 = controlsParams.x; sy0 = controlsParams.y
+                    moved = false; true
                 }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = e.rawX - downX
+                    val dy = e.rawY - downY
+                    if (!moved && hypot(dx, dy) > slop) moved = true
+                    if (moved) {
+                        controlsParams.x = (sx0 + dx).toInt().coerceIn(0, (dm.widthPixels - bs).coerceAtLeast(0))
+                        controlsParams.y = (sy0 + dy).toInt().coerceIn(0, (dm.heightPixels - bs).coerceAtLeast(0))
+                        wm.updateViewLayout(controls, controlsParams)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!moved) {
+                        scroll.visibility = if (scroll.visibility == View.GONE) View.VISIBLE else View.GONE
+                    } else {
+                        val snapLeft = controlsParams.x < dm.widthPixels / 2
+                        controlsParams.x = if (snapLeft) 10 else (dm.widthPixels - bs - 10)
+                        wm.updateViewLayout(controls, controlsParams)
+                    }
+                    saveMenu()
+                    true
+                }
+                else -> false
             }
         }
 
-        list.addView(btn(T(if (view.hideAll) "m_show_all" else "m_hide_all")) {
+        val panelW = (220 * d).toInt()
+        val panelLp = { LinearLayout.LayoutParams(panelW, LinearLayout.LayoutParams.WRAP_CONTENT) }
+
+        val rawTitle = T("m_c8_title")
+        val styledC8Title = SpannableString(rawTitle).apply {
+            val openIdx = rawTitle.indexOf('(')
+            if (openIdx >= 0) {
+                setSpan(RelativeSizeSpan(0.82f), openIdx, rawTitle.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+
+        list.addView(btn(T(if (view.hideAll) "m_show_all" else "m_hide_all")) { b ->
             view.hideAll = !view.hideAll
+            b.text = T(if (view.hideAll) "m_show_all" else "m_hide_all")
             view.save(); view.invalidate(); syncHandles()
-            rebuildControls()
-        }, lp())
+        })
 
-        rotateBtnRef = btn(T(if (isPortraitMode) "m_portrait" else "m_rotate")) {
+        fun rotateLabel() = T(if (isPortraitMode) "m_portrait" else "m_rotate")
+        val rotateBtn = btn(rotateLabel()) { }
+        rotateBtnRef = rotateBtn
+        rotateBtn.setOnClickListener {
             view.rotateTable()
+            isPortraitMode = !isPortraitMode
+            rotateBtnRef.text = rotateLabel()
+            saveMenu()
             syncHandles()
         }
-        list.addView(rotateBtnRef, lp())
+        list.addView(rotateBtn)
 
-        list.addView(btn(T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")) {
+        list.addView(btn(T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")) { b ->
             view.rectHidden = !view.rectHidden
+            b.text = T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")
             view.save(); view.invalidate(); syncHandles()
-            rebuildControls()
-        }, lp())
-
-        list.addView(btn(T(if (view.locked) "m_unlock" else "m_lock")) {
+        })
+        list.addView(btn(T(if (view.locked) "m_unlock" else "m_lock")) { b ->
             view.locked = !view.locked
+            b.text = T(if (view.locked) "m_unlock" else "m_lock")
             view.save(); view.invalidate(); syncHandles()
-            rebuildControls()
-        }, lp())
+        })
+        list.addView(btn(T("m_pockets")) { view.toggle("lines"); syncHandles() })
+        list.addView(btn(styledC8Title) { togglePanel(c8) })
+        list.addView(c8, panelLp())
+        list.addView(btn(T("m_ghost")) { togglePanel(ghost) })
+        list.addView(ghost, panelLp())
 
-        list.addView(btn(T("m_pockets")) {
-            view.toggle("lines")
-            syncHandles()
-        }, lp())
+        fun forceText(f: Int) = "${T("m_force")}: $f"
+        val forceBtn = btn(forceText(currentForce)) { }
+        forceBtnRef = forceBtn
 
-        list.addView(btn(T("m_c8_title")) { togglePanel(c8PanelView) }, lp())
-        list.addView(c8PanelView, lp())
-
-        list.addView(btn(T("m_ghost")) { togglePanel(ghostPanelView) }, lp())
-        list.addView(ghostPanelView, lp())
-
-        forceBtnRef = btn("${T("m_force")}: ${view.cueForce}") {
-            togglePanel(forcePanel)
+        val forceBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding((4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt(), (4 * d).toInt())
+            background = darkBox()
         }
-        list.addView(forceBtnRef, lp())
-        list.addView(forcePanel, lp())
+        forcePanel = forceBox
 
-        list.addView(btn(T("m_line_plus")) { view.thicker(0.5f); syncHandles() }, lp())
-        list.addView(btn(T("m_line_minus")) { view.thicker(-0.5f); syncHandles() }, lp())
+        val row1 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
+        val row2 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
 
-        list.addView(btn(T("m_glow")) { togglePanel(glowPanelView) }, lp())
-        list.addView(glowPanelView, lp())
+        val orderedForces = listOf(
+            listOf(5, 4, 3, 2, 1),
+            listOf(10, 9, 8, 7, 6)
+        )
 
-        list.addView(btn(T("m_theme")) { view.nextTheme() }, lp())
-        list.addView(btn(T("m_hud")) { view.toggle("hud") }, lp())
+        for ((idx, rowList) in orderedForces.withIndex()) {
+            val targetRow = if (idx == 0) row1 else row2
+            for (p in rowList) {
+                val numBtn = Button(this).apply {
+                    text = "$p"
+                    textSize = 10f
+                    typeface = Typeface.DEFAULT_BOLD
+                    minWidth = 0; minHeight = 0
+                    minimumHeight = (28f * d).toInt()
+                    minimumWidth = (36f * d).toInt()
+                    setPadding(0, 0, 0, 0)
+                    setOnClickListener {
+                        currentForce = p
+                        sp.edit().putInt("cue_force", currentForce).apply()
+                        forceBtnRef.text = forceText(currentForce)
+                        forcePanel.visibility = View.GONE
+                        runCatching { view.cueForce = currentForce; view.save(); view.invalidate() }
+                    }
+                }
+                targetRow.addView(numBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    setMargins((2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt(), (2 * d).toInt())
+                })
+            }
+        }
 
+        forceBox.addView(row1)
+        forceBox.addView(row2)
+
+        forceBtn.setOnClickListener {
+            forcePanel.visibility = if (forcePanel.visibility == View.GONE) View.VISIBLE else View.GONE
+        }
+
+        list.addView(forceBtn)
+        list.addView(forcePanel, panelLp())
+
+        list.addView(btn(T("m_line_plus")) { view.thicker(0.5f); syncHandles() })
+        list.addView(btn(T("m_line_minus")) { view.thicker(-0.5f); syncHandles() })
+        list.addView(btn(T("m_glow")) { togglePanel(glow) })
+        list.addView(glow, panelLp())
+        list.addView(btn(T("m_theme")) { view.nextTheme() })
+        list.addView(btn(T("m_hud")) { view.toggle("hud") })
         list.addView(btn(T("m_reset")) {
             view.resetToDefaults()
             rebuildControls()
             syncHandles()
-        }, lp())
-
-        list.addView(btn(T("m_stop")) {
-            stopSelf()
-        }, lp())
-
-        val sv = ScrollView(this).apply {
-            visibility = if (menuOpen) View.VISIBLE else View.GONE
-            addView(list)
-            post { scrollTo(0, savedScroll) }
-        }
-        menuScroll = sv
-
-        controls.addView(ballBtn, LinearLayout.LayoutParams(bs, bs).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
         })
-        controls.addView(sv, LinearLayout.LayoutParams(
-            (145 * d).toInt(), (dm.heightPixels * 0.70f).toInt()
-        ).apply { topMargin = (6 * d).toInt() })
+        list.addView(btn(T("m_stop")) { stopSelf() })
 
-        controlsParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = startX
-            y = startY
-        }
-        cutoutFull(controlsParams)
+        val scrollH = (min(dm.widthPixels, dm.heightPixels) * 0.45f).toInt()
+        controls.addView(ball, LinearLayout.LayoutParams(bs, bs))
+        controls.addView(scroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, scrollH))
+
         wm.addView(controls, controlsParams)
+        if (menuOpen) scroll.post { scroll.scrollTo(0, savedScroll) }
     }
 
     override fun onDestroy() {
-        super.onDestroy()
-        prefs().unregisterOnSharedPreferenceChangeListener(langListener)
+        runCatching { prefs().unregisterOnSharedPreferenceChangeListener(langListener) }
         saveMenu()
+        view.save()
+        for (h in handles) if (h.attached) runCatching { wm.removeView(h.v) }
         runCatching { wm.removeView(controls) }
         runCatching { wm.removeView(view) }
-        for (h in handles) if (h.attached) runCatching { wm.removeView(h.v) }
+        super.onDestroy()
     }
 }
