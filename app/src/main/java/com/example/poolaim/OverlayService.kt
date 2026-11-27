@@ -96,6 +96,7 @@ object Lang {
         "m_f_pro" to "Pro",
         "m_f_cue" to "Cue force",
         "m_f_power" to "Power",
+        "m_f_hint" to "Put C on the centre of the white ball and 8 on the centre of the target ball. The line ends where the ball stops.",
         "m_line_plus" to "Line +",
         "m_line_minus" to "Line -",
         "m_ghost" to "Ghost ball",
@@ -160,6 +161,7 @@ object Lang {
         "m_f_pro" to "احترافي",
         "m_f_cue" to "قوة العصا",
         "m_f_power" to "قوة السحب",
+        "m_f_hint" to "ضع C على مركز الكرة البيضاء و 8 على مركز الكرة المستهدفة. ينتهي الخط حيث تقف الكرة.",
         "m_line_plus" to "سماكة +",
         "m_line_minus" to "سماكة -",
         "m_ghost" to "الكرة الشبحية",
@@ -946,6 +948,10 @@ class OverlayService : Service() {
         proBox.addView(pickerRow(T("m_f_power"), listOf(25, 50, 75, 100), { "$it%" }, view.proPower, 4) { v ->
             view.proPower = v; view.save(); view.invalidate()
         })
+        proBox.addView(
+            tv(T("m_f_hint"), 9.5f, Color.argb(210, 255, 255, 255)).apply { setPadding(0, (4 * d).toInt(), 0, 0) },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        )
         forceBox.addView(proBox)
 
         rbNormal.isChecked = !view.forcePro

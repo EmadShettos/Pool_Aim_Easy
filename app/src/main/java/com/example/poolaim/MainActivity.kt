@@ -1,11 +1,9 @@
 package com.example.poolaim
 
 import android.app.Activity
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
+import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInstaller
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -20,6 +18,9 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -38,47 +39,6 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlin.concurrent.thread
 import kotlin.math.min
-
-class InstallResultReceiver : BroadcastReceiver() {
-    override fun onReceive(ctx: Context, intent: Intent) {
-        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
-        when (status) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                @Suppress("DEPRECATION")
-                val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-                if (confirm != null) {
-                    val act = MainActivity.instance
-                    try {
-                        if (act != null && !act.isFinishing) {
-                            act.startActivity(confirm)
-                        } else {
-                            confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            ctx.startActivity(confirm)
-                        }
-                    } catch (e: Exception) {
-                        val msg = e.message ?: ""
-                        MainActivity.instance?.runOnUiThread {
-                            MainActivity.instance?.onInstallError(PackageInstaller.STATUS_FAILURE, msg)
-                        }
-                    }
-                }
-            }
-            PackageInstaller.STATUS_SUCCESS -> {
-                val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
-                if (launch != null) {
-                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                    runCatching { ctx.startActivity(launch) }
-                }
-            }
-            else -> {
-                val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
-                MainActivity.instance?.runOnUiThread {
-                    MainActivity.instance?.onInstallError(status, msg)
-                }
-            }
-        }
-    }
-}
 
 class BannerView(ctx: Context) : View(ctx) {
     private val d = resources.displayMetrics.density
@@ -149,32 +109,8 @@ class BannerView(ctx: Context) : View(ctx) {
 }
 
 class MainActivity : Activity() {
-    companion object {
-        var instance: MainActivity? = null
-    }
-
-    fun onInstallError(status: Int, msg: String) {
-        isInstalling = false
-        if (status == PackageInstaller.STATUS_FAILURE_ABORTED) {
-            markFailed(
-                if (ar()) "تم إلغاء التثبيت. اضغط إعادة المحاولة أو نزّل التحديث يدوياً"
-                else "Install cancelled. Tap Retry or download the update manually"
-            )
-            return
-        }
-        val f = File(cacheDir, "update.apk")
-        if (!fallbackTried && f.exists()) {
-            fallbackTried = true
-            setStatus(if (ar()) "جارٍ فتح التثبيت..." else "Opening installer...")
-            installFallback(f)
-        } else {
-            markFailed(if (ar()) "فشل التثبيت: $msg" else "Install failed: $msg")
-        }
-    }
-
     private fun markFailed(msg: String) {
         isDownloading = false
-        isInstalling = false
         updateFailed = true
         statusText = msg
         runOnUiThread {
@@ -182,27 +118,16 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun openReleasePage() {
-        try {
-            startActivity(
-                Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse("https://github.com/EmadShettos/Pool_Aim_Easy/releases/tag/${BuildConfig.UPDATE_TAG}")
-                )
-            )
-        } catch (e: Exception) {
-            Toast.makeText(this, if (ar()) "تعذر فتح المتصفح" else "Could not open the browser", Toast.LENGTH_LONG).show()
-        }
-    }
+    // ---------- تثبيت التحديث عبر شاشة تثبيت النظام مباشرة (بدون متصفح أو أي رابط خارجي) ----------
 
-    private fun installFallback(file: File) {
-        if (!file.exists()) {
-            markFailed(if (ar()) "ملف التحديث غير موجود" else "Update file is missing")
-            return
-        }
-        val uri = Uri.parse("content://$packageName.apkprovider/update.apk")
+    private fun installHint(): String =
+        if (ar()) "اضغط «تحديث» في نافذة التثبيت. إذا ظهر تحذير Play Protect فاختر «التثبيت على أي حال»"
+        else "Tap Update in the install window. If a Play Protect warning appears, choose Install anyway"
+
+    /** يفتح شاشة تثبيت النظام لملف APK. يعيد false إذا تعذر فتحها. */
+    private fun launchInstaller(uri: Uri): Boolean {
         fun viewIntent(pkg: String?): Intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
+            setDataAndType(uri, APK_MIME)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
             if (pkg != null) setPackage(pkg)
         }
@@ -212,11 +137,181 @@ class MainActivity : Activity() {
         for (intent in candidates) {
             try {
                 startActivity(intent)
-                return
+                return true
             } catch (e: Exception) {
             }
         }
-        markFailed(if (ar()) "تعذر فتح شاشة التثبيت" else "Could not open the installer screen")
+        return false
+    }
+
+    /** يفتح شاشة التثبيت الآن، أو عند العودة إلى التطبيق إذا لم يكن ظاهراً على الشاشة */
+    private fun openInstaller(uri: Uri, manual: Boolean) {
+        if (!resumed) {
+            pendingInstallUri = uri
+            pendingInstallManual = manual
+            setStatus(
+                if (ar()) "اكتمل التنزيل. ارجع إلى التطبيق لإكمال التثبيت"
+                else "Download complete. Return to the app to finish installing"
+            )
+            return
+        }
+        pendingInstallUri = null
+        if (launchInstaller(uri)) {
+            awaitingInstall = true
+            setStatus(installHint())
+        } else if (manual) {
+            markFailed(
+                if (ar()) "اكتمل التنزيل لكن تعذر فتح شاشة التثبيت. اضغط إشعار اكتمال التنزيل لفتح الملف وتثبيته"
+                else "Downloaded, but the installer could not be opened. Tap the download notification to open and install it"
+            )
+        } else {
+            markFailed(if (ar()) "تعذر فتح شاشة التثبيت" else "Could not open the installer screen")
+        }
+    }
+
+    // ---------- التنزيل والتثبيت اليدوي عبر مدير تنزيلات النظام ----------
+
+    private fun downloadManager() = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+
+    private fun cancelManualDownload() {
+        ui.removeCallbacks(manualPoll)
+        val id = manualId
+        manualId = -1L
+        if (id != -1L) runCatching { downloadManager().remove(id) }
+    }
+
+    private fun startManualDownload() {
+        if (isDownloading) {
+            Toast.makeText(
+                this,
+                if (ar()) "التنزيل جارٍ بالفعل، انتظر قليلاً" else "A download is already in progress, please wait",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        if (!packageManager.canRequestPackageInstalls()) {
+            pendingManual = true
+            Toast.makeText(
+                this,
+                if (ar()) "فعّل إذن تثبيت التطبيقات لهذا التطبيق ثم ارجع" else "Allow Install unknown apps for this app, then come back",
+                Toast.LENGTH_LONG
+            ).show()
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            return
+        }
+        pendingManual = false
+        awaitingInstall = false
+        pendingInstallUri = null
+        try {
+            val dm = downloadManager()
+            cancelManualDownload()
+            val sp = getSharedPreferences(Lang.PREFS, MODE_PRIVATE)
+            val old = sp.getLong(KEY_DM_ID, -1L)
+            if (old != -1L) runCatching { dm.remove(old) }
+            val req = DownloadManager.Request(Uri.parse(apkUrl ?: FALLBACK_APK)).apply {
+                setTitle(if (ar()) "تحديث Pool Aim Shettos" else "Pool Aim Shettos update")
+                setDescription(if (ar()) "اضغط بعد اكتمال التنزيل للتثبيت" else "Tap when finished to install")
+                setMimeType(APK_MIME)
+                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                addRequestHeader("User-Agent", "PoolAimApp")
+                if (Build.VERSION.SDK_INT >= 29) {
+                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, MANUAL_APK_NAME)
+                } else {
+                    runCatching { File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), MANUAL_APK_NAME).delete() }
+                    setDestinationInExternalFilesDir(this@MainActivity, Environment.DIRECTORY_DOWNLOADS, MANUAL_APK_NAME)
+                }
+            }
+            val id = dm.enqueue(req)
+            sp.edit().putLong(KEY_DM_ID, id).apply()
+            manualId = id
+            setStatus(if (ar()) "جارٍ التنزيل... 0%" else "Downloading... 0%")
+            ui.post(manualPoll)
+        } catch (e: Exception) {
+            // مدير التنزيلات غير متاح على هذا الجهاز: نزّل داخل التطبيق ثم افتح شاشة التثبيت
+            manualId = -1L
+            startUpdateFlow()
+        }
+    }
+
+    /** متابعة تقدّم التنزيل اليدوي، وعند اكتماله تُفتح شاشة التثبيت تلقائياً */
+    private val manualPoll = object : Runnable {
+        override fun run() {
+            val id = manualId
+            if (id == -1L || isFinishing || isDestroyed) return
+            var again = false
+            try {
+                val dm = downloadManager()
+                val c = dm.query(DownloadManager.Query().setFilterById(id))
+                if (c == null || !c.moveToFirst()) {
+                    c?.close()
+                    manualId = -1L
+                    markFailed(
+                        if (ar()) "أُلغي التنزيل. اضغط الزر للمحاولة مجدداً"
+                        else "Download cancelled. Tap the button to try again"
+                    )
+                    return
+                }
+                val status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                val reason = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+                val done = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                val total = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+                c.close()
+                when (status) {
+                    DownloadManager.STATUS_SUCCESSFUL -> {
+                        manualId = -1L
+                        val uri = runCatching { dm.getUriForDownloadedFile(id) }.getOrNull()
+                        if (uri != null) {
+                            openInstaller(uri, true)
+                        } else {
+                            markFailed(
+                                if (ar()) "اكتمل التنزيل. اضغط إشعار اكتمال التنزيل لفتح الملف وتثبيته"
+                                else "Download complete. Tap the download notification to open and install it"
+                            )
+                        }
+                    }
+                    DownloadManager.STATUS_FAILED -> {
+                        manualId = -1L
+                        runCatching { dm.remove(id) }
+                        markFailed(
+                            if (ar()) "فشل التنزيل ($reason). اضغط إعادة المحاولة"
+                            else "Download failed ($reason). Tap Retry"
+                        )
+                    }
+                    else -> {
+                        val pct = if (total > 0L) (done * 100 / total).toInt().coerceIn(0, 100) else 0
+                        setStatus(
+                            if (status == DownloadManager.STATUS_PAUSED) {
+                                if (ar()) "في انتظار الشبكة... $pct%" else "Waiting for network... $pct%"
+                            } else {
+                                if (ar()) "جارٍ التنزيل... $pct%" else "Downloading... $pct%"
+                            }
+                        )
+                        again = true
+                    }
+                }
+            } catch (e: Exception) {
+                manualId = -1L
+                markFailed(
+                    if (ar()) "تعذر متابعة التنزيل. اضغط إعادة المحاولة"
+                    else "Could not track the download. Tap Retry"
+                )
+            }
+            if (again) ui.postDelayed(this, 700L)
+        }
+    }
+
+    /** حذف ملفات التحديث القديمة بعد أن يصبح التطبيق محدَّثاً */
+    private fun cleanupUpdateFiles() {
+        if (isDownloading || manualId != -1L) return
+        runCatching { File(cacheDir, "update.apk").delete() }
+        runCatching {
+            val sp = getSharedPreferences(Lang.PREFS, MODE_PRIVATE)
+            val old = sp.getLong(KEY_DM_ID, -1L)
+            if (old != -1L) {
+                downloadManager().remove(old)
+                sp.edit().remove(KEY_DM_ID).apply()
+            }
+        }
     }
 
     private val gold = 0xFFFFD21F.toInt()
@@ -226,13 +321,21 @@ class MainActivity : Activity() {
 
     private var isUpdateRequired = false
     private var isDownloading = false
-    private var isInstalling = false
     private var pendingStart = false
     private var pendingUpdate = false
+    private var pendingManual = false
     private var autoTried = false
     private var updateFailed = false
-    private var fallbackTried = false
-    private var installStartedAt = 0L
+    // هل التطبيق ظاهر على الشاشة الآن
+    private var resumed = false
+    // فُتحت شاشة التثبيت وننتظر نتيجتها
+    private var awaitingInstall = false
+    // ملف جاهز للتثبيت ينتظر عودة المستخدم إلى التطبيق
+    private var pendingInstallUri: Uri? = null
+    private var pendingInstallManual = false
+    // رقم التنزيل اليدوي الجاري في مدير التنزيلات (-1 = لا يوجد)
+    private var manualId = -1L
+    private val ui = Handler(Looper.getMainLooper())
     private var apkUrl: String? = null
     private var statusText: String = ""
     private var statusView: TextView? = null
@@ -240,7 +343,9 @@ class MainActivity : Activity() {
 
     private val RELEASE_API = "https://api.github.com/repos/EmadShettos/Pool_Aim_Easy/releases/tags/${BuildConfig.UPDATE_TAG}"
     private val FALLBACK_APK = "https://github.com/EmadShettos/Pool_Aim_Easy/releases/download/${BuildConfig.UPDATE_TAG}/EmadShettos-PoolAim.apk"
-    private val ACTION_INSTALL_RESULT = "com.example.poolaim.INSTALL_RESULT"
+    private val APK_MIME = "application/vnd.android.package-archive"
+    private val MANUAL_APK_NAME = "PoolAimShettos-update.apk"
+    private val KEY_DM_ID = "update_dm_id"
     private val PRIVACY_URL = "https://www.termsfeed.com/live/62a09e53-631e-42b3-b6dc-76bc545e19ba"
 
     private fun ar() = Lang.isAr(this)
@@ -257,7 +362,7 @@ class MainActivity : Activity() {
     }
 
     private fun checkForUpdates() {
-        if (isDownloading || isInstalling) return
+        if (isDownloading) return
         thread {
             try {
                 val conn = (URL(RELEASE_API).openConnection() as HttpURLConnection).apply {
@@ -292,6 +397,7 @@ class MainActivity : Activity() {
                     assetTime > 0L && assetTime > (installedAt + 300_000L)
                 }
                 apkUrl = url
+                if (!need) cleanupUpdateFiles()
                 runOnUiThread {
                     if (!need) updateFailed = false
                     if (need != isUpdateRequired) {
@@ -310,10 +416,6 @@ class MainActivity : Activity() {
 
     private fun startUpdateFlow() {
         if (isDownloading) return
-        if (isInstalling) {
-            if (System.currentTimeMillis() - installStartedAt < 90_000L) return
-            isInstalling = false
-        }
         if (!packageManager.canRequestPackageInstalls()) {
             pendingUpdate = true
             Toast.makeText(
@@ -325,7 +427,9 @@ class MainActivity : Activity() {
             return
         }
         pendingUpdate = false
-        fallbackTried = false
+        awaitingInstall = false
+        pendingInstallUri = null
+        cancelManualDownload()
         if (updateFailed) {
             updateFailed = false
             build(scroll?.scrollY ?: 0)
@@ -365,7 +469,8 @@ class MainActivity : Activity() {
             }
             runOnUiThread {
                 isDownloading = false
-                installApk(out)
+                // فتح شاشة تثبيت النظام مباشرة (نفس مسار تثبيت الملفات المنزَّلة الذي يتجاوز تحذير Play Protect بنجاح)
+                openInstaller(Uri.parse("content://$packageName.apkprovider/update.apk"), false)
             }
         }
     }
@@ -410,43 +515,6 @@ class MainActivity : Activity() {
             }
         } finally {
             conn.disconnect()
-        }
-    }
-
-    private fun installApk(file: File) {
-        isInstalling = true
-        installStartedAt = System.currentTimeMillis()
-        setStatus(if (ar()) "جارٍ التثبيت..." else "Installing...")
-        thread {
-            try {
-                val pi = packageManager.packageInstaller
-                for (old in pi.mySessions) runCatching { pi.abandonSession(old.sessionId) }
-                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-                params.setAppPackageName(packageName)
-                if (Build.VERSION.SDK_INT >= 31) {
-                    params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-                }
-                val id = pi.createSession(params)
-                val session = pi.openSession(id)
-                file.inputStream().use { ins ->
-                    session.openWrite("update.apk", 0, file.length()).use { os ->
-                        ins.copyTo(os)
-                        session.fsync(os)
-                    }
-                }
-                val intent = Intent(this, InstallResultReceiver::class.java).setAction(ACTION_INSTALL_RESULT)
-                val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                    (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
-                val pending = PendingIntent.getBroadcast(this, id, intent, flags)
-                session.commit(pending.intentSender)
-                session.close()
-            } catch (e: Exception) {
-                runOnUiThread {
-                    isInstalling = false
-                    fallbackTried = true
-                    installFallback(file)
-                }
-            }
         }
     }
 
@@ -523,13 +591,13 @@ class MainActivity : Activity() {
             "٢) افتح التطبيق واضغط زر تشغيل العرض (Start).\n" +
             "٣) في أول مرة سينقلك التطبيق إلى إعدادات الظهور فوق التطبيقات. فعّل الإذن ثم ارجع للتطبيق.\n" +
             "٤) عند رجوعك تظهر القائمة العائمة تلقائياً.\n" +
-            "٥) عند صدور تحديث يظهر كرت التحديث ويبدأ التنزيل والتثبيت تلقائياً. إذا ظهرت نافذة تأكيد التثبيت فاضغط تثبيت."
+            "٥) عند صدور تحديث يظهر كرت التحديث ويبدأ التنزيل تلقائياً ثم تُفتح نافذة التثبيت. اضغط «تحديث»، وإذا ظهر تحذير Play Protect فاختر «التثبيت على أي حال»."
         } else {
             "1) Open the APK and allow installing from this source if asked.\n" +
             "2) Open the app and tap Start.\n" +
             "3) The first time, the app opens the 'Display over other apps' settings. Enable it and come back.\n" +
             "4) When you return, the floating menu starts automatically.\n" +
-            "5) When an update is released, the update card appears and download/install starts automatically. If an install confirmation appears, tap Install."
+            "5) When an update is released, the update card appears, the download starts automatically, then the install window opens. Tap Update, and if a Play Protect warning appears choose Install anyway."
         }
         card.addView(label(installText, 13f, soft, false, false),
             LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(6) })
@@ -684,9 +752,9 @@ class MainActivity : Activity() {
             if (updateFailed) {
                 updateBox.addView(
                     styled(
-                        if (isAr) "تنزيل يدوي من صفحة الإصدارات" else "Download manually (Releases)",
+                        if (isAr) "تنزيل وتثبيت يدوي" else "Download & install manually",
                         0xFF0B0B0B.toInt(), gold
-                    ) { openReleasePage() },
+                    ) { startManualDownload() },
                     LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                     ).apply { topMargin = dp(8) }
@@ -787,37 +855,48 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        instance = this
         build(0)
     }
 
     override fun onResume() {
         super.onResume()
+        resumed = true
         if (pendingStart) {
             pendingStart = false
             if (!isUpdateRequired && Settings.canDrawOverlays(this)) {
                 launchOverlay()
             }
         }
+        if (awaitingInstall) {
+            // عدنا من شاشة التثبيت والنسخة الحالية ما زالت تعمل: التثبيت لم يكتمل (أُلغي أو حُظر)
+            awaitingInstall = false
+            markFailed(
+                if (ar()) "لم يكتمل التثبيت. اضغط إعادة المحاولة، وإذا ظهر تحذير Play Protect فاختر «التثبيت على أي حال»"
+                else "The install was not completed. Tap Retry, and if a Play Protect warning appears choose Install anyway"
+            )
+        }
         if (pendingUpdate && packageManager.canRequestPackageInstalls()) {
             pendingUpdate = false
             startUpdateFlow()
         }
-        if (isInstalling && System.currentTimeMillis() - installStartedAt > 90_000L) {
-            isInstalling = false
+        if (pendingManual && packageManager.canRequestPackageInstalls()) {
+            pendingManual = false
+            startManualDownload()
         }
+        pendingInstallUri?.let { openInstaller(it, pendingInstallManual) }
         checkForUpdates()
         videoSlider?.resume()
     }
 
     override fun onPause() {
         super.onPause()
+        resumed = false
         videoSlider?.pause()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        if (instance == this) instance = null
+        ui.removeCallbacks(manualPoll)
         videoSlider?.release()
     }
 }
