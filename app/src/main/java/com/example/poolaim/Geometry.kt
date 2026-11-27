@@ -27,6 +27,55 @@ object Geometry {
         return (BASE_COEFF - (f - 1) * FORCE_STEP).coerceIn(0.92f, 1.0f)
     }
 
+    // ===================== الوضع الاحترافي: قوة العصا × قوة السحب =====================
+    // المسار يُحسب بمحاكاة فيزيائية كاملة (PoolPhysics) بنفس وحدات طاولة اللعبة:
+    // C = مركز الكرة البيضاء، 8 = مركز الكرة المستهدفة، والضربة مستقيمة على خط C→8.
+    // سرعة الانطلاق تُحدَّد من قوة العصا وقوة السحب، ثم يُتتبَّع مسار الكرة المستهدفة
+    // حتى تقف تمامًا أو تدخل الجيب، فينتهي الخط عند نقطة استقرارها.
+
+    /**
+     * legs: مسار الكرة المستهدفة بالبكسل؛ كل ضلع (x0,y0,x1,y1,...) ينتهي عند ارتداد أو عند التوقف.
+     * aimEnd: نهاية خط الكرة البيضاء (مركز الكرة المستهدفة، أو نقطة توقف البيضاء إذا لم تصل).
+     * stopPt: نقطة استقرار الكرة (null إذا دخلت الجيب).
+     * pocketed: دخلت الكرة المستهدفة الجيب.
+     * banks: عدد الارتدادات عن الوسائد.
+     * ballR: نصف قطر الكرة الحقيقي بالبكسل.
+     */
+    class ProPath(
+        val legs: List<FloatArray>,
+        val aimEnd: Pt,
+        val stopPt: Pt?,
+        val pocketed: Boolean,
+        val banks: Int,
+        val ballR: Float
+    )
+
+    fun proPath(start: Pt, aim: Pt, r: Box, cueForce: Int, powerPct: Int): ProPath {
+        val w = max(1f, r.r - r.l).toDouble()
+        val h = max(1f, r.b - r.t).toDouble()
+        val cxPx = (r.l + r.r) / 2.0
+        val cyPx = (r.t + r.b) / 2.0
+        val kx = PoolPhysics.TABLE_W / w      // بكسل -> وحدة طاولة
+        val ky = PoolPhysics.TABLE_H / h
+        fun px(x: Double) = (cxPx + x / kx).toFloat()
+        fun py(y: Double) = (cyPx + y / ky).toFloat()
+
+        val cueX = PoolPhysics.clampX((start.first - cxPx) * kx)
+        val cueY = PoolPhysics.clampY((start.second - cyPx) * ky)
+        val tgtX = PoolPhysics.clampX((aim.first - cxPx) * kx)
+        val tgtY = PoolPhysics.clampY((aim.second - cyPx) * ky)
+        val ballR = (PoolPhysics.BALL_R / kx).toFloat()
+
+        val shot = PoolPhysics.simulate(cueX, cueY, tgtX, tgtY, PoolPhysics.shotSpeed(cueForce, powerPct))
+        val end = Pt(px(shot.endX), py(shot.endY))
+        if (!shot.hit) return ProPath(emptyList(), end, end, false, 0, ballR)
+
+        val legs = shot.legs.map { leg ->
+            FloatArray(leg.size) { i -> if (i % 2 == 0) px(leg[i]) else py(leg[i]) }
+        }
+        return ProPath(legs, Pt(px(tgtX), py(tgtY)), if (shot.pocketed) null else end, shot.pocketed, shot.banks, ballR)
+    }
+
     fun dist(a: Pt, b: Pt) = hypot(a.first - b.first, a.second - b.second)
 
     fun pocketCenters(r: Box): List<Pt> {

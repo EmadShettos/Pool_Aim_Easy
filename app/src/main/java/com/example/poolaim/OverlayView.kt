@@ -24,6 +24,10 @@ class OverlayView(ctx: Context) : View(ctx) {
     var thickness = 2f
     var themeIdx = 0
     var cueForce = 1
+    // وضع القوة: false = عادي (السلوك الافتراضي الحالي) | true = احترافي
+    var forcePro = false
+    var proCue = 10
+    var proPower = 100
     var locked = true
     var rectHidden = false
     var aimHidden = true
@@ -43,6 +47,11 @@ class OverlayView(ctx: Context) : View(ctx) {
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textAlign = Paint.Align.CENTER }
 
     private val touchFill = Color.argb(55, 255, 60, 60)
+
+    // الوضع الاحترافي: مسار محسوب يُحفظ ولا يُعاد حسابه إلا عند تغيّر النقاط أو المستطيل أو القوة
+    private var proCache: Geometry.ProPath? = null
+    private val proKey = FloatArray(10)
+    private val legPath = Path()
 
     init { load(); flags["animate"] = false }
 
@@ -102,6 +111,9 @@ class OverlayView(ctx: Context) : View(ctx) {
         flags["hud"] = true
         thickness = 1.5f
         cueForce = 1
+        forcePro = false
+        proCue = 10
+        proPower = 100
         glowStep = 3
         glowSizeStep = 5
         aimHidden = true
@@ -237,6 +249,51 @@ class OverlayView(ctx: Context) : View(ctx) {
         paint.color = Color.BLACK; c.drawCircle(x, y, 0.9f * d, paint)
     }
 
+    private fun proPathCached(b: Box): Geometry.ProPath {
+        val k = floatArrayOf(p1.x, p1.y, p2.x, p2.y, b.l, b.t, b.r, b.b, proCue.toFloat(), proPower.toFloat())
+        val cached = proCache
+        if (cached != null && k.contentEquals(proKey)) return cached
+        val pp = Geometry.proPath(pt(p1), pt(p2), b, proCue, proPower)
+        k.copyInto(proKey)
+        proCache = pp
+        return pp
+    }
+
+    /** رسم مسار الكرة المستهدفة في الوضع الاحترافي: كل ضلع خط متصل ينتهي عند ارتداد أو عند نقطة التوقف */
+    private fun drawProLegs(c: Canvas, pp: Geometry.ProPath, bw: Float) {
+        val oldJoin = paint.strokeJoin
+        paint.strokeJoin = Paint.Join.ROUND
+        val glow = flags["glow"] == true && glowStep > 0
+        val k = 1f + glowSizeStep / 10f
+        for ((i, leg) in pp.legs.withIndex()) {
+            if (leg.size < 4) continue
+            legPath.rewind()
+            legPath.moveTo(leg[0], leg[1])
+            var j = 2
+            while (j + 1 < leg.size) {
+                legPath.lineTo(leg[j], leg[j + 1])
+                j += 2
+            }
+            paint.style = Paint.Style.STROKE
+            if (glow) {
+                paint.strokeWidth = pocketR * k
+                paint.color = (Color.WHITE and 0x00FFFFFF) or (glowAlpha(60) shl 24)
+                c.drawPath(legPath, paint)
+                paint.strokeWidth = pocketR * 0.6f * k
+                paint.color = (Color.WHITE and 0x00FFFFFF) or (glowAlpha(110) shl 24)
+                c.drawPath(legPath, paint)
+            }
+            paint.strokeWidth = bw
+            paint.color = Color.BLACK
+            c.drawPath(legPath, paint)
+            if (i < pp.legs.size - 1) {
+                paint.style = Paint.Style.FILL; paint.color = Color.argb(200, 0, 0, 0)
+                c.drawCircle(leg[leg.size - 2], leg[leg.size - 1], 3.5f * d, paint)
+            }
+        }
+        paint.strokeJoin = oldJoin
+    }
+
     override fun onDraw(c: Canvas) {
         if (hideAll) return
         val th = thickness * d
@@ -256,6 +313,7 @@ class OverlayView(ctx: Context) : View(ctx) {
 
         var segs: List<Pair<Pt, Pt>> = emptyList()
         var snapped = false
+        var pro: Geometry.ProPath? = null
         val dx = p2.x - p1.x
         val dy = p2.y - p1.y
 
@@ -269,10 +327,19 @@ class OverlayView(ctx: Context) : View(ctx) {
             var maxBanks = if (isDouble) 4 else if (isBank) 2 else 1
             val bw = max(2f * d, th + d)
 
-            glowLine(c, p1.x, p1.y, p2.x, p2.y, Color.WHITE, 60, 110)
-            line(c, p1.x, p1.y, p2.x, p2.y, th, Color.BLACK)
-
-            var m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks, cueForce)
+            var m: List<Pair<Pt, Pt>>
+            if (forcePro) {
+                // الوضع الاحترافي: محاكاة فيزيائية كاملة؛ الخط ينتهي حيث تقف الكرة المستهدفة أو تدخل الجيب
+                val pp = proPathCached(b)
+                pro = pp
+                glowLine(c, p1.x, p1.y, pp.aimEnd.first, pp.aimEnd.second, Color.WHITE, 60, 110)
+                line(c, p1.x, p1.y, pp.aimEnd.first, pp.aimEnd.second, th, Color.BLACK)
+                m = emptyList()
+            } else {
+                glowLine(c, p1.x, p1.y, p2.x, p2.y, Color.WHITE, 60, 110)
+                line(c, p1.x, p1.y, p2.x, p2.y, th, Color.BLACK)
+                m = Geometry.bankSegments(pt(p2), Pt(dx / len, dy / len), b, maxBanks, 1)
+            }
 
             if (flags["snap"] == true && m.isNotEmpty()) {
                 val last = m.last().second
@@ -295,6 +362,27 @@ class OverlayView(ctx: Context) : View(ctx) {
                     c.drawCircle(s.second.first, s.second.second, 3.5f * d, paint)
                 }
             }
+
+            pro?.let { pp ->
+                drawProLegs(c, pp, bw)
+                snapped = pp.pocketed
+                val sp = pp.stopPt
+                if (sp != null) {
+                    // نقطة استقرار الكرة المستهدفة (بالحجم الحقيقي للكرة)
+                    val br = pp.ballR
+                    paint.style = Paint.Style.FILL; paint.color = Color.argb(70, 255, 255, 255)
+                    c.drawCircle(sp.first, sp.second, br, paint)
+                    ring(c, sp.first, sp.second, br, Color.WHITE, 1.6f * d)
+                    paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.4f * d; paint.color = Color.BLACK
+                    val k = br * 0.45f
+                    c.drawLine(sp.first - k, sp.second - k, sp.first + k, sp.second + k, paint)
+                    c.drawLine(sp.first - k, sp.second + k, sp.first + k, sp.second - k, paint)
+                } else if (pp.legs.isNotEmpty()) {
+                    // الكرة دخلت الجيب: حلقة حول الجيب الذي تنتهي فيه
+                    val last = pp.legs.last()
+                    ring(c, last[last.size - 2], last[last.size - 1], pocketR, Color.WHITE, 2f * d)
+                }
+            }
         }
 
         var info: Triple<Int, Float, Float>? = null
@@ -306,6 +394,8 @@ class OverlayView(ctx: Context) : View(ctx) {
                 touchCircle(c, qx, p.y, touchR)
                 text.textSize = 10f * d; text.isFakeBoldText = true
                 c.drawText(label, qx, p.y - touchR - 4f * d, text)
+                // الوضع الاحترافي: حلقة بحجم الكرة الحقيقي لتسهيل وضع النقطة على مركز الكرة
+                pro?.let { ring(c, p.x, p.y, it.ballR, Color.argb(200, 255, 255, 255), 1.2f * d) }
                 glowDot(c, p.x, p.y)
             }
         }
@@ -324,7 +414,7 @@ class OverlayView(ctx: Context) : View(ctx) {
             }
         }
 
-        if (flags["hud"] == true) drawHud(c, info, segs, snapped)
+        if (flags["hud"] == true) drawHud(c, info, segs, snapped, pro)
     }
 
     private fun drawGhost(c: Canvas, b: Box): Triple<Int, Float, Float>? {
@@ -363,7 +453,7 @@ class OverlayView(ctx: Context) : View(ctx) {
         }
     }
 
-    private fun drawHud(c: Canvas, info: Triple<Int, Float, Float>?, segs: List<Pair<Pt, Pt>>, snapped: Boolean) {
+    private fun drawHud(c: Canvas, info: Triple<Int, Float, Float>?, segs: List<Pair<Pt, Pt>>, snapped: Boolean, pro: Geometry.ProPath?) {
         val ar = Lang.isAr(context)
         val parts = mutableListOf(Lang.t(context, if (locked) "hud_locked" else "hud_unlocked"))
         if (info != null) {
@@ -375,9 +465,12 @@ class OverlayView(ctx: Context) : View(ctx) {
             )
             parts.add(diffText(Geometry.difficulty(info.second, info.third, rect.width())))
         }
-        if (segs.isNotEmpty()) {
-            parts.add("${max(0, segs.size - 1)} ${Lang.t(context, "hud_banks")}")
-            parts.add("${if (ar) "قوة" else "P"}: $cueForce")
+        if (segs.isNotEmpty() || pro != null) {
+            parts.add("${pro?.banks ?: max(0, segs.size - 1)} ${Lang.t(context, "hud_banks")}")
+            parts.add(
+                if (forcePro) (if (ar) "عصا $proCue • سحب $proPower%" else "Cue $proCue • $proPower%")
+                else (if (ar) "قوة: عادي" else "Force: Normal")
+            )
             if (snapped) parts.add(Lang.t(context, "hud_pocketed"))
         }
         val s = parts.joinToString("  |  ")
@@ -398,6 +491,7 @@ class OverlayView(ctx: Context) : View(ctx) {
             putFloat("mx", marker.x); putFloat("my", marker.y)
             putFloat("thick", thickness); putInt("theme", themeIdx)
             putInt("cue_force", cueForce)
+            putBoolean("force_pro", forcePro); putInt("pro_cue", proCue); putInt("pro_power", proPower)
             putInt("gdist", ghostDistStep); putInt("gsize", ghostSizeStep)
             putInt("glow_step", glowStep); putInt("glow_size", glowSizeStep)
             putBoolean("locked", locked); putBoolean("rect_hidden", rectHidden)
@@ -419,6 +513,9 @@ class OverlayView(ctx: Context) : View(ctx) {
         thickness = prefs.getFloat("thick", 2f).coerceIn(1f, 10f)
         themeIdx = prefs.getInt("theme", 0).coerceIn(0, THEMES.size - 1)
         cueForce = prefs.getInt("cue_force", 1).coerceIn(1, 10)
+        forcePro = prefs.getBoolean("force_pro", false)
+        proCue = prefs.getInt("pro_cue", 10).coerceIn(1, 10)
+        proPower = prefs.getInt("pro_power", 100).let { if (it in listOf(25, 50, 75, 100)) it else 100 }
         for (k in flags.keys.toList()) flags[k] = prefs.getBoolean("f_$k", flags[k]!!)
         if (!prefs.contains("l")) return
         val l = prefs.getFloat("l", 0f); val t = prefs.getFloat("t", 0f)
