@@ -341,6 +341,8 @@ class OverlayService : Service() {
     private fun T(k: String) = Lang.t(this, k)
     private var isPortraitMode = false
     private val dragScale = 0.6f
+    private var gate: NetworkGate? = null
+    private var overlayStarted = false
 
     private val langListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == Lang.KEY && ::controls.isInitialized && ::view.isInitialized) {
@@ -427,6 +429,16 @@ class OverlayService : Service() {
         super.onCreate()
         startAsForeground()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        val g = NetworkGate(this, wm)
+        gate = g
+        g.run { ok ->
+            if (ok) startOverlay() else g.showNoInternet { stopSelf() }
+        }
+    }
+
+    private fun startOverlay() {
+        if (overlayStarted) return
+        overlayStarted = true
         view = OverlayView(this)
         overlayParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
@@ -993,12 +1005,16 @@ class OverlayService : Service() {
     }
 
     override fun onDestroy() {
+        gate?.cancel()
+        gate = null
         runCatching { prefs().unregisterOnSharedPreferenceChangeListener(langListener) }
-        saveMenu()
-        view.save()
-        for (h in handles) if (h.attached) runCatching { wm.removeView(h.v) }
-        runCatching { wm.removeView(controls) }
-        runCatching { wm.removeView(view) }
+        if (overlayStarted) {
+            saveMenu()
+            view.save()
+            for (h in handles) if (h.attached) runCatching { wm.removeView(h.v) }
+            runCatching { wm.removeView(controls) }
+            runCatching { wm.removeView(view) }
+        }
         super.onDestroy()
     }
 }
