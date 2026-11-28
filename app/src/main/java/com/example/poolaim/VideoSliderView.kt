@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.SurfaceTexture
@@ -33,6 +32,7 @@ import kotlin.math.min
  * تقرأ تلقائياً كل ملفات الفيديو (mp4...) والصور (png/jpg/webp...) الموجودة في مجلد res/raw،
  * وعدد نقاط المؤشر = عدد الملفات. أضف أو احذف ملفاً من المجلد وسيتغير كل شيء تلقائياً.
  * الترتيب بحسب الاسم والرقم: v1, v2, ... v10, v11
+ * كل فيديو يتمدد ليملأ اللوحة بالكامل (مثل الفيديوهات القديمة).
  */
 class VideoSliderView(ctx: Context) : FrameLayout(ctx) {
 
@@ -52,8 +52,6 @@ class VideoSliderView(ctx: Context) : FrameLayout(ctx) {
     private var prepared = false
     private var surface: Surface? = null
     private var surfaceReady = false
-    private var videoW = 0
-    private var videoH = 0
     private var failStreak = 0
     private var loadToken = 0
     private var animGen = 0
@@ -93,9 +91,7 @@ class VideoSliderView(ctx: Context) : FrameLayout(ctx) {
                 }
             }
 
-            override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {
-                applyVideoTransform()
-            }
+            override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {}
 
             override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
                 surfaceReady = false
@@ -242,11 +238,6 @@ class VideoSliderView(ctx: Context) : FrameLayout(ctx) {
             mp.setSurface(sf)
             mp.setDataSource(context, Uri.parse("android.resource://${context.packageName}/${items[index].resId}"))
             mp.isLooping = items.size == 1
-            mp.setOnVideoSizeChangedListener { _, w, h ->
-                videoW = w
-                videoH = h
-                applyVideoTransform()
-            }
             mp.setOnPreparedListener { p ->
                 if (token == loadToken) {
                     prepared = true
@@ -267,22 +258,6 @@ class VideoSliderView(ctx: Context) : FrameLayout(ctx) {
         } catch (e: Exception) {
             onMediaFailed()
         }
-    }
-
-    private fun applyVideoTransform() {
-        val vw = textureView.width
-        val vh = textureView.height
-        if (videoW <= 0 || videoH <= 0 || vw <= 0 || vh <= 0) {
-            textureView.setTransform(null)
-            return
-        }
-        // تغطية كاملة للوحة (Center Crop) دون تشويه النسبة
-        val scale = max(vw.toFloat() / videoW, vh.toFloat() / videoH)
-        val sx = videoW * scale / vw
-        val sy = videoH * scale / vh
-        val m = Matrix()
-        m.setScale(sx, sy, vw / 2f, vh / 2f)
-        textureView.setTransform(m)
     }
 
     private fun loadImage(index: Int) {
@@ -418,8 +393,6 @@ class VideoSliderView(ctx: Context) : FrameLayout(ctx) {
 
     private fun releasePlayer() {
         prepared = false
-        videoW = 0
-        videoH = 0
         val mp = mediaPlayer
         mediaPlayer = null
         if (mp != null) {
