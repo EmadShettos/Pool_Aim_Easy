@@ -827,23 +827,6 @@ class OverlayService : Service() {
             saveMenu()
             syncHandles()
         }
-        list.addView(rotateBtn)
-
-        list.addView(btn(T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")) { b ->
-            view.rectHidden = !view.rectHidden
-            b.text = T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")
-            view.save(); view.invalidate(); syncHandles()
-        })
-        list.addView(btn(T(if (view.locked) "m_unlock" else "m_lock")) { b ->
-            view.locked = !view.locked
-            b.text = T(if (view.locked) "m_unlock" else "m_lock")
-            view.save(); view.invalidate(); syncHandles()
-        })
-        list.addView(btn(T("m_pockets")) { view.toggle("lines"); syncHandles() })
-        list.addView(btn(styledC8Title) { togglePanel(c8) })
-        list.addView(c8, panelLp())
-        list.addView(btn(T("m_ghost")) { togglePanel(ghost) })
-        list.addView(ghost, panelLp())
 
         val rawForce = T("m_force")
         val styledForce = SpannableString(rawForce).apply {
@@ -968,9 +951,25 @@ class OverlayService : Service() {
             forcePanel.visibility = if (forcePanel.visibility == View.GONE) View.VISIBLE else View.GONE
         }
 
+        // ترتيب الأزرار في القائمة
+        list.addView(btn(T("m_pockets")) { view.toggle("lines"); syncHandles() })
         list.addView(forceBtn)
         list.addView(forcePanel, panelLp())
-
+        list.addView(btn(styledC8Title) { togglePanel(c8) })
+        list.addView(c8, panelLp())
+        list.addView(btn(T("m_ghost")) { togglePanel(ghost) })
+        list.addView(ghost, panelLp())
+        list.addView(btn(T(if (view.locked) "m_unlock" else "m_lock")) { b ->
+            view.locked = !view.locked
+            b.text = T(if (view.locked) "m_unlock" else "m_lock")
+            view.save(); view.invalidate(); syncHandles()
+        })
+        list.addView(btn(T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")) { b ->
+            view.rectHidden = !view.rectHidden
+            b.text = T(if (view.rectHidden) "m_show_rect" else "m_hide_rect")
+            view.save(); view.invalidate(); syncHandles()
+        })
+        list.addView(rotateBtn)
         list.addView(btn(T("m_line_plus")) { view.thicker(0.5f); syncHandles() })
         list.addView(btn(T("m_line_minus")) { view.thicker(-0.5f); syncHandles() })
         list.addView(btn(T("m_glow")) { togglePanel(glow) })
@@ -984,7 +983,7 @@ class OverlayService : Service() {
         })
         list.addView(btn(T("m_stop")) { stopSelf() })
 
-        val scrollH = (min(dm.widthPixels, dm.heightPixels) * 0.45f).toInt()
+        val scrollH = (min(dm.widthPixels, dm.heightPixels) * 0.63f).toInt()
         controls.addView(ball, LinearLayout.LayoutParams(bs, bs))
         controls.addView(scroll, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, scrollH))
